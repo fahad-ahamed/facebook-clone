@@ -1746,6 +1746,9 @@ export default function FacebookClone() {
   const { listings } = useMarketplace();
   const { reels } = useReels('feed');
   
+  // Friend count state - must be declared before currentUser
+  const [realFriendCount, setRealFriendCount] = useState(0);
+  
   // Current user
   const currentUser: UserType = authUser ? {
     ...authUser,
@@ -1769,7 +1772,6 @@ export default function FacebookClone() {
   const [showFriendsList, setShowFriendsList] = useState(false);
   const [friendsList, setFriendsList] = useState<UserType[]>([]);
   const [blockedUsersList, setBlockedUsersList] = useState<UserType[]>([]);
-  const [realFriendCount, setRealFriendCount] = useState(0);
   
   // Create Post States
   const [postContent, setPostContent] = useState('');
