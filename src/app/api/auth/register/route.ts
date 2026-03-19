@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import bcrypt from 'bcryptjs';
+import { sendEmail, getVerificationEmailHtml, isEmailConfigured } from '@/lib/email';
 
 // Email validation regex
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
@@ -86,16 +87,42 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    // Send verification email
+    let emailSent = false;
+    let emailError = null;
+    
+    if (isEmailConfigured()) {
+      const emailResult = await sendEmail({
+        to: email,
+        subject: 'Verify Your Email - Facebook Clone',
+        html: getVerificationEmailHtml(verificationCode, firstName)
+      });
+      emailSent = emailResult.success;
+      emailError = emailResult.error;
+    }
+
     const { password: _, ...userWithoutPassword } = user;
     
-    // For demo: return the verification code in the response
-    // In production, this would be sent via email
-    return NextResponse.json({
-      message: 'Registration successful. Please verify your email.',
-      user: userWithoutPassword,
-      verificationCode: verificationCode, // Demo: show code in UI
-      requiresVerification: true
-    }, { status: 201 });
+    // Return response based on email configuration
+    if (emailSent) {
+      // Real email was sent
+      return NextResponse.json({
+        message: 'Registration successful. Please check your email for the verification code.',
+        user: userWithoutPassword,
+        requiresVerification: true,
+        emailSent: true
+      }, { status: 201 });
+    } else {
+      // Email service not configured or failed - return code in response for demo
+      return NextResponse.json({
+        message: 'Registration successful. Please verify your email.',
+        user: userWithoutPassword,
+        verificationCode: verificationCode, // Only shown if email failed
+        requiresVerification: true,
+        emailSent: false,
+        emailError: emailError || 'Email service not configured. Please add RESEND_API_KEY to .env file.'
+      }, { status: 201 });
+    }
 
   } catch (error) {
     console.error('Registration error:', error);

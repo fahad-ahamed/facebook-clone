@@ -823,7 +823,8 @@ function AuthScreen({ onLogin, onRegister, loading }: AuthScreenProps) {
   const [pendingUserData, setPendingUserData] = useState<AuthScreenProps['onRegister'] extends (data: infer D) => void ? D : never | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [codeResent, setCodeResent] = useState(false);
-  
+  const [emailSent, setEmailSent] = useState(false); // Track if real email was sent
+
   // Forgot password states
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
@@ -833,6 +834,7 @@ function AuthScreen({ onLogin, onRegister, loading }: AuthScreenProps) {
   const [resetStep, setResetStep] = useState<'email' | 'code' | 'password'>('email');
   const [resetting, setResetting] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
+  const [resetEmailSent, setResetEmailSent] = useState(false); // Track if real email was sent for reset
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -879,7 +881,8 @@ function AuthScreen({ onLogin, onRegister, loading }: AuthScreenProps) {
         
         if (data.requiresVerification) {
           setPendingUserData(userData);
-          setDisplayCode(data.verificationCode);
+          setDisplayCode(data.verificationCode || '');
+          setEmailSent(data.emailSent || false);
           setShowVerification(true);
         } else if (data.user) {
           onRegister(userData);
@@ -933,14 +936,16 @@ function AuthScreen({ onLogin, onRegister, loading }: AuthScreenProps) {
         body: JSON.stringify({ email }),
       });
       const data = await res.json();
-      
+
+      // Update display code and email status
       if (data.verificationCode) {
         setDisplayCode(data.verificationCode);
-        setVerificationCode('');
-        setError('');
-        setCodeResent(true);
-        setTimeout(() => setCodeResent(false), 3000);
       }
+      setEmailSent(data.emailSent || false);
+      setVerificationCode('');
+      setError('');
+      setCodeResent(true);
+      setTimeout(() => setCodeResent(false), 3000);
     } catch (err) {
       setError('Failed to resend code. Please try again.');
     }
@@ -966,8 +971,10 @@ function AuthScreen({ onLogin, onRegister, loading }: AuthScreenProps) {
         
         if (data.resetCode) {
           setDisplayResetCode(data.resetCode);
+          setResetEmailSent(data.emailSent || false);
           setResetStep('code');
         } else {
+          setResetEmailSent(data.emailSent || false);
           setError('If an account exists, a reset code has been sent');
           setResetStep('code');
         }
@@ -1038,27 +1045,43 @@ function AuthScreen({ onLogin, onRegister, loading }: AuthScreenProps) {
               </p>
             </div>
 
-            {/* Demo: Show the code prominently */}
-            <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl p-4 mb-4 text-white">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
-                  <span className="text-xs">ℹ️</span>
+            {/* Show code display or email sent message */}
+            {emailSent ? (
+              <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl p-4 mb-4 text-white">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
+                    <Check className="w-4 h-4" />
+                  </div>
+                  <span className="font-semibold text-sm">Email Sent!</span>
                 </div>
-                <span className="font-semibold text-sm">Demo Mode - Use this code:</span>
+                <p className="text-sm text-white/90">
+                  A 6-digit verification code has been sent to your email address. Please check your inbox (and spam folder).
+                </p>
               </div>
-              <div className="bg-white/20 rounded-lg p-3 text-center">
-                <span className="text-4xl font-bold tracking-widest">{displayCode || '------'}</span>
+            ) : (
+              <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl p-4 mb-4 text-white">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
+                    <span className="text-xs">ℹ️</span>
+                  </div>
+                  <span className="font-semibold text-sm">Demo Mode - Use this code:</span>
+                </div>
+                <div className="bg-white/20 rounded-lg p-3 text-center">
+                  <span className="text-4xl font-bold tracking-widest">{displayCode || '------'}</span>
+                </div>
+                <p className="text-xs text-white/80 mt-2 text-center">
+                  (Configure RESEND_API_KEY in .env to send real emails)
+                </p>
               </div>
-              <p className="text-xs text-white/80 mt-2 text-center">
-                (In production, this code would be sent to your email)
-              </p>
-            </div>
+            )}
 
             {/* Code resent success message */}
             {codeResent && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 flex items-center gap-2">
                 <Check className="w-5 h-5 text-green-500" />
-                <span className="text-green-700 text-sm font-medium">New code sent! Check the code above.</span>
+                <span className="text-green-700 text-sm font-medium">
+                  {emailSent ? 'New code sent to your email!' : 'New code generated! Check above.'}
+                </span>
               </div>
             )}
 
@@ -1141,22 +1164,36 @@ function AuthScreen({ onLogin, onRegister, loading }: AuthScreenProps) {
               )}
             </div>
 
-            {/* Demo: Show the reset code prominently */}
-            {resetStep === 'code' && displayResetCode && (
-              <div className="bg-gradient-to-r from-orange-500 to-red-600 rounded-xl p-4 mb-4 text-white">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
-                    <span className="text-xs">ℹ️</span>
+            {/* Show reset code display or email sent message */}
+            {resetStep === 'code' && (
+              resetEmailSent ? (
+                <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl p-4 mb-4 text-white">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
+                      <Check className="w-4 h-4" />
+                    </div>
+                    <span className="font-semibold text-sm">Email Sent!</span>
                   </div>
-                  <span className="font-semibold text-sm">Demo Mode - Your reset code:</span>
+                  <p className="text-sm text-white/90">
+                    A password reset code has been sent to your email. Please check your inbox (and spam folder).
+                  </p>
                 </div>
-                <div className="bg-white/20 rounded-lg p-3 text-center">
-                  <span className="text-4xl font-bold tracking-widest">{displayResetCode}</span>
+              ) : displayResetCode ? (
+                <div className="bg-gradient-to-r from-orange-500 to-red-600 rounded-xl p-4 mb-4 text-white">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
+                      <span className="text-xs">ℹ️</span>
+                    </div>
+                    <span className="font-semibold text-sm">Demo Mode - Your reset code:</span>
+                  </div>
+                  <div className="bg-white/20 rounded-lg p-3 text-center">
+                    <span className="text-4xl font-bold tracking-widest">{displayResetCode}</span>
+                  </div>
+                  <p className="text-xs text-white/80 mt-2 text-center">
+                    (Configure RESEND_API_KEY in .env to send real emails)
+                  </p>
                 </div>
-                <p className="text-xs text-white/80 mt-2 text-center">
-                  (In production, this code would be sent to your email)
-                </p>
-              </div>
+              ) : null
             )}
 
             {resetSuccess ? (

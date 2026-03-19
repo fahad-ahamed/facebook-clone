@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { sendEmail, getVerificationEmailHtml, isEmailConfigured } from '@/lib/email';
 
 // Verify email with 6-digit code
 export async function POST(request: NextRequest) {
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Request new verification code
+// Request new verification code (Resend)
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
@@ -94,11 +95,34 @@ export async function PUT(request: NextRequest) {
       }
     });
 
-    // For demo: return the code in response
-    return NextResponse.json({ 
-      message: 'New verification code sent',
-      verificationCode: newCode // Demo: show code in UI
-    });
+    // Send verification email
+    let emailSent = false;
+    let emailError = null;
+
+    if (isEmailConfigured()) {
+      const emailResult = await sendEmail({
+        to: email,
+        subject: 'Your New Verification Code - Facebook Clone',
+        html: getVerificationEmailHtml(newCode, user.firstName)
+      });
+      emailSent = emailResult.success;
+      emailError = emailResult.error;
+    }
+
+    if (emailSent) {
+      return NextResponse.json({ 
+        message: 'New verification code sent to your email',
+        emailSent: true
+      });
+    } else {
+      // Email service not configured or failed - return code in response for demo
+      return NextResponse.json({ 
+        message: 'New verification code generated',
+        verificationCode: newCode, // Only shown if email failed
+        emailSent: false,
+        emailError: emailError || 'Email service not configured. Please add RESEND_API_KEY to .env file.'
+      });
+    }
 
   } catch (error) {
     console.error('Resend verification error:', error);
