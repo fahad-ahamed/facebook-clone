@@ -822,6 +822,7 @@ function AuthScreen({ onLogin, onRegister, loading }: AuthScreenProps) {
   const [displayCode, setDisplayCode] = useState('');
   const [pendingUserData, setPendingUserData] = useState<AuthScreenProps['onRegister'] extends (data: infer D) => void ? D : never | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [codeResent, setCodeResent] = useState(false);
   
   // Forgot password states
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -924,6 +925,7 @@ function AuthScreen({ onLogin, onRegister, loading }: AuthScreenProps) {
   };
 
   const handleResendCode = async () => {
+    setCodeResent(false);
     try {
       const res = await fetch('/api/auth/verify-email', {
         method: 'PUT',
@@ -934,10 +936,13 @@ function AuthScreen({ onLogin, onRegister, loading }: AuthScreenProps) {
       
       if (data.verificationCode) {
         setDisplayCode(data.verificationCode);
+        setVerificationCode('');
         setError('');
+        setCodeResent(true);
+        setTimeout(() => setCodeResent(false), 3000);
       }
     } catch (err) {
-      setError('Failed to resend code');
+      setError('Failed to resend code. Please try again.');
     }
   };
 
@@ -1033,19 +1038,35 @@ function AuthScreen({ onLogin, onRegister, loading }: AuthScreenProps) {
               </p>
             </div>
 
-            {/* Demo: Show the code */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-              <p className="text-sm text-yellow-800 text-center">
-                <strong>Demo Mode:</strong> Your verification code is<br />
-                <span className="text-2xl font-bold text-yellow-900">{displayCode}</span>
+            {/* Demo: Show the code prominently */}
+            <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl p-4 mb-4 text-white">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
+                  <span className="text-xs">ℹ️</span>
+                </div>
+                <span className="font-semibold text-sm">Demo Mode - Use this code:</span>
+              </div>
+              <div className="bg-white/20 rounded-lg p-3 text-center">
+                <span className="text-4xl font-bold tracking-widest">{displayCode || '------'}</span>
+              </div>
+              <p className="text-xs text-white/80 mt-2 text-center">
+                (In production, this code would be sent to your email)
               </p>
             </div>
+
+            {/* Code resent success message */}
+            {codeResent && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 flex items-center gap-2">
+                <Check className="w-5 h-5 text-green-500" />
+                <span className="text-green-700 text-sm font-medium">New code sent! Check the code above.</span>
+              </div>
+            )}
 
             <div className="space-y-4">
               <div>
                 <label className="text-sm text-gray-500 mb-1 block">Enter 6-digit code</label>
                 <Input
-                  placeholder="000000"
+                  placeholder="Enter code above"
                   value={verificationCode}
                   onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   className="h-12 text-center text-xl tracking-widest"
@@ -1054,7 +1075,7 @@ function AuthScreen({ onLogin, onRegister, loading }: AuthScreenProps) {
               </div>
 
               {error && (
-                <div className="text-red-500 text-sm text-center">{error}</div>
+                <div className="text-red-500 text-sm text-center bg-red-50 p-2 rounded-lg">{error}</div>
               )}
 
               <Button
@@ -1062,15 +1083,26 @@ function AuthScreen({ onLogin, onRegister, loading }: AuthScreenProps) {
                 disabled={verifying || verificationCode.length !== 6}
                 className="w-full h-12 bg-[#1877F2] hover:bg-[#166FE5] text-white font-semibold"
               >
-                {verifying ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Verify'}
+                {verifying ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Verify & Continue'}
               </Button>
 
-              <div className="text-center">
+              <div className="flex items-center justify-center gap-4">
                 <button
                   onClick={handleResendCode}
-                  className="text-sm text-[#1877F2] hover:underline"
+                  className="text-sm text-[#1877F2] hover:underline flex items-center gap-1"
                 >
-                  Resend code
+                  <span>🔄</span> Resend code
+                </button>
+                <span className="text-gray-300">|</span>
+                <button
+                  onClick={() => {
+                    if (displayCode) {
+                      setVerificationCode(displayCode);
+                    }
+                  }}
+                  className="text-sm text-green-600 hover:underline flex items-center gap-1"
+                >
+                  <span>📋</span> Auto-fill code
                 </button>
               </div>
 
@@ -1109,12 +1141,20 @@ function AuthScreen({ onLogin, onRegister, loading }: AuthScreenProps) {
               )}
             </div>
 
-            {/* Demo: Show the reset code */}
+            {/* Demo: Show the reset code prominently */}
             {resetStep === 'code' && displayResetCode && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                <p className="text-sm text-yellow-800 text-center">
-                  <strong>Demo Mode:</strong> Your reset code is<br />
-                  <span className="text-2xl font-bold text-yellow-900">{displayResetCode}</span>
+              <div className="bg-gradient-to-r from-orange-500 to-red-600 rounded-xl p-4 mb-4 text-white">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
+                    <span className="text-xs">ℹ️</span>
+                  </div>
+                  <span className="font-semibold text-sm">Demo Mode - Your reset code:</span>
+                </div>
+                <div className="bg-white/20 rounded-lg p-3 text-center">
+                  <span className="text-4xl font-bold tracking-widest">{displayResetCode}</span>
+                </div>
+                <p className="text-xs text-white/80 mt-2 text-center">
+                  (In production, this code would be sent to your email)
                 </p>
               </div>
             )}
