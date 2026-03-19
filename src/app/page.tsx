@@ -17,9 +17,9 @@ import {
   Smile, MapPin, Calendar, Flag, Globe, Settings, LogOut, Moon, Sun, 
   Gamepad2, Play, ShoppingBag, Briefcase, HelpCircle, ChevronDown, 
   ChevronRight, ChevronLeft, X, Plus, Check, Lock, Eye, EyeOff, 
-  UserPlus, Camera, Edit, Trash2, Phone, Clock, Star, Gift, Music,
+  UserPlus, UserMinus, Camera, Edit, Trash2, Phone, Clock, Star, Gift, Music,
   Volume2, VolumeX, Shield, Key, Monitor, Globe2, MessageSquare,
-  BookOpen, Radio, HeartHandshake, Loader2, Film, Mail
+  BookOpen, Radio, HeartHandshake, Loader2, Film, Mail, ArrowLeft, Home as HomeIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as api from '@/lib/api';
@@ -1773,6 +1773,15 @@ export default function FacebookClone() {
   const [friendsList, setFriendsList] = useState<UserType[]>([]);
   const [blockedUsersList, setBlockedUsersList] = useState<UserType[]>([]);
   
+  // View other user's profile
+  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  const [viewingUser, setViewingUser] = useState<UserType | null>(null);
+  const [viewingUserPosts, setViewingUserPosts] = useState<Post[]>([]);
+  const [viewingUserFriends, setViewingUserFriends] = useState<UserType[]>([]);
+  const [viewingUserTab, setViewingUserTab] = useState('Posts');
+  const [friendSearchQuery, setFriendSearchQuery] = useState('');
+  const [showFriendActions, setShowFriendActions] = useState<string | null>(null);
+  
   // Create Post States
   const [postContent, setPostContent] = useState('');
   const [postFeeling, setPostFeeling] = useState<string | null>(null);
@@ -2076,6 +2085,92 @@ export default function FacebookClone() {
   const handleLogout = async () => {
     await logout();
     setShowSettings(false);
+  };
+
+  // View another user's profile
+  const handleViewUserProfile = async (userId: string) => {
+    if (userId === currentUser.id) {
+      setCurrentPage('profile');
+      return;
+    }
+    
+    try {
+      // Fetch user data
+      const userRes = await fetch(`/api/users/${userId}`);
+      const userData = await userRes.json();
+      
+      if (userData.user) {
+        setViewingUser(userData.user);
+        setViewingUserId(userId);
+        setViewingUserTab('Posts');
+        
+        // Fetch user's posts
+        const postsRes = await fetch(`/api/posts?userId=${userId}&limit=20`);
+        const postsData = await postsRes.json();
+        setViewingUserPosts(postsData.posts || []);
+        
+        // Fetch user's friends
+        const friendsRes = await fetch(`/api/friends?type=friends&userId=${userId}`);
+        const friendsData = await friendsRes.json();
+        setViewingUserFriends(friendsData.friends || []);
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    }
+  };
+
+  const handleCloseUserProfile = () => {
+    setViewingUserId(null);
+    setViewingUser(null);
+    setViewingUserPosts([]);
+    setViewingUserFriends([]);
+  };
+
+  // Remove friend
+  const handleRemoveFriend = async (friendId: string) => {
+    try {
+      await fetch('/api/friends', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ friendId, action: 'unfriend' })
+      });
+      setFriendsList(prev => prev.filter(f => f.id !== friendId));
+      setRealFriendCount(prev => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error('Error removing friend:', error);
+    }
+  };
+
+  // Block user
+  const handleBlockUser = async (userId: string) => {
+    try {
+      await fetch('/api/block', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blockedId: userId, action: 'block' })
+      });
+      setFriendsList(prev => prev.filter(f => f.id !== userId));
+      // Refresh blocked users
+      const blockRes = await fetch('/api/block');
+      const blockData = await blockRes.json();
+      setBlockedUsersList(blockData.blockedUsers || []);
+    } catch (error) {
+      console.error('Error blocking user:', error);
+    }
+  };
+
+  // Unblock user
+  const handleUnblockUser = async (userId: string) => {
+    try {
+      await fetch('/api/block', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blockedId: userId, action: 'unblock' })
+      });
+      setBlockedUsersList(prev => prev.filter(u => u.id !== userId));
+    } catch (error) {
+      console.error('Error unblocking user:', error);
+    }
   };
 
   // Show auth screen if not logged in
@@ -3142,32 +3237,77 @@ export default function FacebookClone() {
           {/* Friends Tab */}
           {profileTab === 'Friends' && (
             <div>
+              {/* Search Bar */}
+              <div className="relative mb-3">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  placeholder="Search friends..."
+                  value={friendSearchQuery}
+                  onChange={(e) => setFriendSearchQuery(e.target.value)}
+                  className="pl-9 bg-gray-100 border-0 rounded-full h-9"
+                />
+              </div>
+              
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold">Friends</h3>
-                <span className="text-gray-500 text-sm">{friendsList.length} friends</span>
+                <span className="text-gray-500 text-sm">{friendsList.filter(f => 
+                  `${f.firstName} ${f.lastName}`.toLowerCase().includes(friendSearchQuery.toLowerCase())
+                ).length} friends</span>
               </div>
+              
               {friendsList.length > 0 ? (
                 <div className="grid grid-cols-3 gap-2">
-                  {friendsList.map((friend) => (
-                    <div key={friend.id} className="text-center">
-                      <Avatar className="w-full aspect-square rounded-lg">
-                        <AvatarImage src={friend.avatar} className="object-cover" />
-                      </Avatar>
-                      <p className="text-xs font-medium mt-1 truncate">{friend.firstName} {friend.lastName}</p>
-                      <div className="flex gap-1 mt-1">
-                        <button 
-                          onClick={() => handleRemoveFriend(friend.id)}
-                          className="flex-1 text-[10px] py-1 bg-gray-100 rounded text-gray-600 hover:bg-gray-200"
-                        >
-                          Remove
-                        </button>
-                        <button 
-                          onClick={() => handleBlockUser(friend.id)}
-                          className="flex-1 text-[10px] py-1 bg-red-50 rounded text-red-600 hover:bg-red-100"
-                        >
-                          Block
-                        </button>
+                  {friendsList
+                    .filter(f => `${f.firstName} ${f.lastName}`.toLowerCase().includes(friendSearchQuery.toLowerCase()))
+                    .map((friend) => (
+                    <div key={friend.id} className="relative group">
+                      <div 
+                        onClick={() => handleViewUserProfile(friend.id)}
+                        className="cursor-pointer"
+                      >
+                        <Avatar className="w-full aspect-square rounded-lg">
+                          <AvatarImage src={friend.avatar} className="object-cover" />
+                        </Avatar>
+                        <p className="text-xs font-medium mt-1 truncate text-center">{friend.firstName} {friend.lastName}</p>
                       </div>
+                      
+                      {/* Actions Dropdown */}
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowFriendActions(showFriendActions === friend.id ? null : friend.id);
+                        }}
+                        className="absolute top-1 right-1 w-6 h-6 bg-white/80 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <MoreHorizontal className="w-4 h-4 text-gray-600" />
+                      </button>
+                      
+                      {showFriendActions === friend.id && (
+                        <div className="absolute top-8 right-1 bg-white rounded-lg shadow-xl border z-10 w-36 py-1">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveFriend(friend.id);
+                              setShowFriendActions(null);
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-100 text-sm"
+                          >
+                            <UserMinus className="w-4 h-4" />
+                            Unfriend
+                          </button>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleBlockUser(friend.id);
+                              setShowFriendActions(null);
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-100 text-sm text-red-600"
+                          >
+                            <Shield className="w-4 h-4" />
+                            Block
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -3179,20 +3319,29 @@ export default function FacebookClone() {
               )}
               
               {blockedUsersList.length > 0 && (
-                <div className="mt-6">
-                  <h3 className="font-semibold mb-3">Blocked Users</h3>
-                  <div className="space-y-2">
+                <div className="mt-6 border-t pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-red-600">Blocked Users</h3>
+                    <span className="text-gray-500 text-sm">{blockedUsersList.length} blocked</span>
+                  </div>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
                     {blockedUsersList.map((user) => (
                       <div key={user.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <Avatar className="w-8 h-8">
+                        <div 
+                          className="flex items-center gap-2 cursor-pointer flex-1"
+                          onClick={() => handleViewUserProfile(user.id)}
+                        >
+                          <Avatar className="w-10 h-10">
                             <AvatarImage src={user.avatar} />
                           </Avatar>
-                          <span className="text-sm">{user.firstName} {user.lastName}</span>
+                          <div>
+                            <span className="text-sm font-medium">{user.firstName} {user.lastName}</span>
+                            <p className="text-xs text-gray-500">Blocked</p>
+                          </div>
                         </div>
                         <button 
                           onClick={() => handleUnblockUser(user.id)}
-                          className="text-xs px-3 py-1 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200"
+                          className="text-xs px-3 py-1.5 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 font-medium"
                         >
                           Unblock
                         </button>
@@ -3260,6 +3409,212 @@ export default function FacebookClone() {
         onClose={() => setShowEditProfile(false)}
         onSave={handleUpdateProfile}
       />
+      
+      {/* User Profile Modal - View other user's profile */}
+      <Dialog open={!!viewingUserId} onOpenChange={(open) => !open && handleCloseUserProfile()}>
+        <DialogContent className="max-w-lg p-0 gap-0 max-h-[90vh] overflow-y-auto">
+          {viewingUser && (
+            <>
+              {/* Cover Photo */}
+              <div className="relative h-40 bg-gray-200">
+                {viewingUser.coverPhoto && (
+                  <img src={viewingUser.coverPhoto} className="w-full h-full object-cover" alt="" />
+                )}
+                <button
+                  onClick={handleCloseUserProfile}
+                  className="absolute top-2 left-2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+              </div>
+              
+              {/* Profile Picture */}
+              <div className="relative px-4">
+                <div className="relative -mt-16 w-28 h-28">
+                  <Avatar className="w-28 h-28 border-4 border-white shadow-lg">
+                    <AvatarImage src={viewingUser.avatar} className="object-cover" />
+                  </Avatar>
+                </div>
+              </div>
+              
+              {/* User Info */}
+              <div className="px-4 pt-2 pb-4">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-bold">{viewingUser.firstName} {viewingUser.lastName}</h2>
+                  {viewingUser.isVerified && (
+                    <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                      <Check className="w-3 h-3 text-white" />
+                    </div>
+                  )}
+                </div>
+                <p className="text-gray-500 text-sm mt-1">{viewingUser.bio || 'No bio yet'}</p>
+                
+                {/* Stats */}
+                <div className="flex gap-4 mt-3 text-sm">
+                  <div className="flex items-center gap-1">
+                    <Users className="w-4 h-4 text-gray-500" />
+                    <span className="font-semibold">{viewingUserFriends.length}</span>
+                    <span className="text-gray-500">friends</span>
+                  </div>
+                  {viewingUser.currentCity && (
+                    <div className="flex items-center gap-1 text-gray-500">
+                      <MapPin className="w-4 h-4" />
+                      <span>{viewingUser.currentCity}</span>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Action Buttons */}
+                <div className="flex gap-2 mt-3">
+                  <Button 
+                    onClick={async () => {
+                      try {
+                        await fetch('/api/friends', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ receiverId: viewingUser.id })
+                        });
+                      } catch (error) {
+                        console.error('Error sending friend request:', error);
+                      }
+                    }}
+                    className="flex-1 bg-[#1877F2] hover:bg-[#166FE5]"
+                  >
+                    <UserPlus className="w-4 h-4 mr-2" />
+                    Add Friend
+                  </Button>
+                  <Button 
+                    onClick={() => setShowChat(viewingUser.id)}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    <MessageCircle className="w-4 h-4 mr-2" />
+                    Message
+                  </Button>
+                </div>
+              </div>
+              
+              <Separator />
+              
+              {/* Tabs */}
+              <div className="flex border-b">
+                {['Posts', 'About', 'Friends', 'Photos'].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setViewingUserTab(tab)}
+                    className={cn(
+                      "flex-1 py-3 text-sm font-medium relative",
+                      viewingUserTab === tab ? "text-[#1877F2]" : "text-gray-500"
+                    )}
+                  >
+                    {tab}
+                    {viewingUserTab === tab && (
+                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#1877F2]" />
+                    )}
+                  </button>
+                ))}
+              </div>
+              
+              {/* Tab Content */}
+              <div className="p-4">
+                {viewingUserTab === 'Posts' && (
+                  <div>
+                    {viewingUserPosts.length > 0 ? (
+                      viewingUserPosts.map(post => (
+                        <PostItem 
+                          key={post.id} 
+                          post={post} 
+                          currentUser={currentUser}
+                          onReaction={handleReaction}
+                          onComment={handleComment}
+                          onShare={handleShare}
+                          onSave={handleSave}
+                          onDelete={handleDelete}
+                        />
+                      ))
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        <p>No posts yet</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {viewingUserTab === 'About' && (
+                  <div className="space-y-4">
+                    {viewingUser.workplace && (
+                      <div className="flex items-center gap-3">
+                        <Briefcase className="w-5 h-5 text-gray-500" />
+                        <span className="text-sm">Works at <strong>{viewingUser.workplace}</strong></span>
+                      </div>
+                    )}
+                    {viewingUser.education && (
+                      <div className="flex items-center gap-3">
+                        <BookOpen className="w-5 h-5 text-gray-500" />
+                        <span className="text-sm">Studied at <strong>{viewingUser.education}</strong></span>
+                      </div>
+                    )}
+                    {viewingUser.currentCity && (
+                      <div className="flex items-center gap-3">
+                        <MapPin className="w-5 h-5 text-gray-500" />
+                        <span className="text-sm">Lives in <strong>{viewingUser.currentCity}</strong></span>
+                      </div>
+                    )}
+                    {viewingUser.hometown && (
+                      <div className="flex items-center gap-3">
+                        <Home className="w-5 h-5 text-gray-500" />
+                        <span className="text-sm">From <strong>{viewingUser.hometown}</strong></span>
+                      </div>
+                    )}
+                    {!viewingUser.workplace && !viewingUser.education && !viewingUser.currentCity && !viewingUser.hometown && (
+                      <p className="text-gray-500 text-sm text-center py-4">No info available</p>
+                    )}
+                  </div>
+                )}
+                
+                {viewingUserTab === 'Friends' && (
+                  <div>
+                    <p className="text-gray-500 text-sm mb-3">{viewingUserFriends.length} friends</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {viewingUserFriends.slice(0, 12).map((friend) => (
+                        <div 
+                          key={friend.id} 
+                          className="text-center cursor-pointer"
+                          onClick={() => handleViewUserProfile(friend.id)}
+                        >
+                          <Avatar className="w-full aspect-square rounded-lg">
+                            <AvatarImage src={friend.avatar} className="object-cover" />
+                          </Avatar>
+                          <p className="text-xs font-medium mt-1 truncate">{friend.firstName} {friend.lastName}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {viewingUserFriends.length === 0 && (
+                      <p className="text-gray-500 text-sm text-center py-4">No friends to show</p>
+                    )}
+                  </div>
+                )}
+                
+                {viewingUserTab === 'Photos' && (
+                  <div>
+                    {viewingUserPosts.filter(p => p.mediaUrl).length > 0 ? (
+                      <div className="grid grid-cols-3 gap-1">
+                        {viewingUserPosts.filter(p => p.mediaUrl).map((post) => (
+                          <div key={post.id} className="aspect-square">
+                            <img src={post.mediaUrl} alt="" className="w-full h-full object-cover rounded" />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-gray-500 text-sm text-center py-4">No photos yet</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
       
       {/* Create Story Modal */}
       <CreateStoryModal
