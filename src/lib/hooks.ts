@@ -73,10 +73,10 @@ export function usePosts(authorId?: string, groupId?: string, pageId?: string) {
 
   const reactToPost = async (postId: string, type: string) => {
     const res = await api.reactToPost(postId, type);
-    if (res.success) {
+    if (res.success || res.message) {
       setPosts(prev => prev.map(p => 
         p.id === postId 
-          ? { ...p, userReaction: res.reaction?.type, likeCount: res.likeCount }
+          ? { ...p, userReaction: res.reaction?.type || null, likeCount: res.likeCount || p.likeCount }
           : p
       ));
     }
@@ -195,7 +195,8 @@ export function useFollow(userId?: string) {
   const follow = async (targetUserId: string) => {
     const res = await api.followUser(targetUserId);
     if (res.following) {
-      setFollowing(prev => [...prev, res.user]);
+      // Refresh the following list instead of assuming user object
+      fetchFollowing();
     }
     return res;
   };

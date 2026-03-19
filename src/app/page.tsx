@@ -1748,13 +1748,15 @@ export default function FacebookClone() {
   
   // Friend count state - must be declared before currentUser
   const [realFriendCount, setRealFriendCount] = useState(0);
+  const [followerCount, setFollowerCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
   
   // Current user
   const currentUser: UserType = authUser ? {
     ...authUser,
-    friendCount: realFriendCount || 0,
-    followerCount: 12000,
-    followingCount: 890
+    friendCount: realFriendCount || authUser.friendCount || 0,
+    followerCount: followerCount || authUser.followerCount || 0,
+    followingCount: followingCount || authUser.followingCount || 0
   } as UserType : defaultUser;
 
   // UI States
@@ -1864,23 +1866,7 @@ export default function FacebookClone() {
       });
     });
     
-    if (storyList.length === 1) {
-      const mockUsers: UserType[] = [
-        { id: '2', firstName: 'Sarah', lastName: 'Wilson', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah', isVerified: true, isOnline: true, email: '' },
-        { id: '3', firstName: 'Mike', lastName: 'Johnson', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Mike', isVerified: false, isOnline: true, email: '' },
-        { id: '4', firstName: 'Emily', lastName: 'Rose', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Emily', isVerified: true, isOnline: false, email: '' },
-      ];
-      mockUsers.forEach((user, i) => {
-        storyList.push({
-          id: `mock-${i}`,
-          user,
-          mediaUrl: `https://picsum.photos/seed/story${i}/400/700`,
-          createdAt: new Date(Date.now() - (i + 1) * 60 * 60 * 1000).toISOString(),
-          isViewed: i > 0
-        });
-      });
-    }
-    
+    // Return only real stories (no mock data)
     return storyList;
   }, [apiStories, currentUser]);
 
@@ -1895,16 +1881,8 @@ export default function FacebookClone() {
         messages: c.messages || []
       }));
     }
-    const mockUsers: UserType[] = [
-      { id: '2', firstName: 'Sarah', lastName: 'Wilson', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah', isVerified: true, isOnline: true, email: '' },
-      { id: '3', firstName: 'Mike', lastName: 'Johnson', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Mike', isVerified: false, isOnline: true, email: '' },
-      { id: '4', firstName: 'Emily', lastName: 'Rose', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Emily', isVerified: true, isOnline: false, email: '' },
-    ];
-    return [
-      { id: '1', user: mockUsers[0], lastMessage: { content: 'Hey! How are you?', createdAt: new Date().toISOString(), isRead: false }, unreadCount: 3, messages: [] },
-      { id: '2', user: mockUsers[1], lastMessage: { content: 'See you tomorrow!', createdAt: new Date(Date.now() - 3600000).toISOString(), isRead: true }, unreadCount: 0, messages: [] },
-      { id: '3', user: mockUsers[2], lastMessage: { content: 'Thanks!', createdAt: new Date(Date.now() - 7200000).toISOString(), isRead: true }, unreadCount: 0, messages: [] },
-    ];
+    // Return empty array instead of mock data
+    return [];
   }, [conversations]);
 
   // Fetch friend count and friends list on mount
@@ -1921,6 +1899,13 @@ export default function FacebookClone() {
         }
         if (blockedRes.blockedUsers) {
           setBlockedUsersList(blockedRes.blockedUsers);
+        }
+        
+        // Fetch follower/following counts
+        const userRes = await api.getCurrentUser();
+        if (userRes.user) {
+          setFollowerCount(userRes.user.followerCount || 0);
+          setFollowingCount(userRes.user.followingCount || 0);
         }
       } catch (error) {
         console.error('Fetch friend data error:', error);

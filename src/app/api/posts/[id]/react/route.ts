@@ -25,7 +25,7 @@ export async function POST(
     // Check if post exists
     const post = await db.post.findUnique({
       where: { id: postId },
-      select: { id: true }
+      select: { id: true, likeCount: true }
     });
 
     if (!post) {
@@ -40,33 +40,49 @@ export async function POST(
       }
     });
 
+    let reaction = null;
+    let newLikeCount = post.likeCount;
+
     if (existingReaction) {
       if (existingReaction.type === type) {
         // Remove reaction if same type
         await db.reaction.delete({
           where: { id: existingReaction.id }
         });
-        return NextResponse.json({ message: 'Reaction removed', reaction: null });
+        newLikeCount = Math.max(0, post.likeCount - 1);
+        await db.post.update({
+          where: { id: postId },
+          data: { likeCount: newLikeCount }
+        });
       } else {
         // Update reaction type
-        const updated = await db.reaction.update({
+        reaction = await db.reaction.update({
           where: { id: existingReaction.id },
           data: { type }
         });
-        return NextResponse.json({ message: 'Reaction updated', reaction: updated });
       }
+    } else {
+      // Create new reaction
+      reaction = await db.reaction.create({
+        data: {
+          userId: authUser.userId,
+          postId,
+          type
+        }
+      });
+      newLikeCount = post.likeCount + 1;
+      await db.post.update({
+        where: { id: postId },
+        data: { likeCount: newLikeCount }
+      });
     }
 
-    // Create new reaction
-    const reaction = await db.reaction.create({
-      data: {
-        userId: authUser.userId,
-        postId,
-        type
-      }
-    });
-
-    return NextResponse.json({ message: 'Reaction added', reaction }, { status: 201 });
+    return NextResponse.json({ 
+      success: true,
+      message: reaction ? 'Reaction added' : 'Reaction removed', 
+      reaction,
+      likeCount: newLikeCount
+    }, { status: 201 });
 
   } catch (error) {
     console.error('React error:', error);
