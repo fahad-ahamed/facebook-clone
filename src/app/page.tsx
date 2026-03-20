@@ -624,14 +624,36 @@ function ChatView({ chat, currentUser, onBack, onSendMessage }: {
   onBack: () => void;
   onSendMessage: (content: string, mediaUrl?: string, mediaType?: string) => void;
 }) {
-  const [messages, setMessages] = useState<MessageType[]>([
-    { id: 'm1', content: 'Hey there! 👋', senderId: chat.user.id, createdAt: new Date(Date.now() - 3600000).toISOString(), isRead: true },
-    { id: 'm2', content: 'Hi! How are you?', senderId: currentUser.id, createdAt: new Date(Date.now() - 3000000).toISOString(), isRead: true },
-    { id: 'm3', content: chat.lastMessage.content, senderId: chat.user.id, createdAt: chat.lastMessage.createdAt, isRead: chat.lastMessage.isRead },
-  ]);
   const [newMessage, setNewMessage] = useState('');
   const [showAttach, setShowAttach] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Initialize messages safely - use empty array if chat is undefined
+  const [messages, setMessages] = useState<MessageType[]>(() => {
+    if (!chat || !chat.user) return [];
+    return [
+      { id: 'm1', content: 'Hey there! 👋', senderId: chat.user.id, createdAt: new Date(Date.now() - 3600000).toISOString(), isRead: true },
+      { id: 'm2', content: 'Hi! How are you?', senderId: currentUser.id, createdAt: new Date(Date.now() - 3000000).toISOString(), isRead: true },
+      { id: 'm3', content: chat.lastMessage?.content || 'Hello!', senderId: chat.user.id, createdAt: chat.lastMessage?.createdAt || new Date().toISOString(), isRead: chat.lastMessage?.isRead ?? true },
+    ];
+  });
+
+  // Handle case when chat is undefined
+  if (!chat || !chat.user) {
+    return (
+      <motion.div
+        initial={{ x: '100%' }}
+        animate={{ x: 0 }}
+        exit={{ x: '100%' }}
+        className="fixed inset-0 bg-white z-[60] flex flex-col items-center justify-center"
+      >
+        <p className="text-gray-500 mb-4">Select a conversation to start chatting</p>
+        <button onClick={onBack} className="px-4 py-2 bg-gray-100 rounded-lg">
+          Back
+        </button>
+      </motion.div>
+    );
+  }
 
   const handleSend = () => {
     if (newMessage.trim()) {
@@ -1741,7 +1763,7 @@ export default function FacebookClone() {
   const { requests: friendRequests, suggestions: friendSuggestions, acceptRequest, rejectRequest, refresh: refreshFriends } = useFriends();
   const { notifications: apiNotifications, unreadCount: apiUnreadCount, markAsRead, refresh: refreshNotifications } = useNotifications();
   const { results: searchResults, search } = useSearch();
-  const { stories: apiStories, create: createStory } = useStories('feed');
+  const { stories: apiStories, create: createStory, refresh: refreshStories } = useStories('feed');
   const { conversations } = useConversations();
   const { listings } = useMarketplace();
   const { reels } = useReels('feed');
@@ -1794,6 +1816,8 @@ export default function FacebookClone() {
   const [postMediaPreview, setPostMediaPreview] = useState('');
   const postFileInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const profilePhotoInputRef = useRef<HTMLInputElement>(null);
+  const coverPhotoInputRef = useRef<HTMLInputElement>(null);
 
   // Settings States
   const [darkMode, setDarkMode] = useState(false);
@@ -2028,6 +2052,8 @@ export default function FacebookClone() {
         mediaUrl,
         visibility: 'friends'
       });
+      // Refresh stories after creation
+      refreshStories();
     } catch (error) {
       console.error('Create story error:', error);
     }
@@ -2072,6 +2098,29 @@ export default function FacebookClone() {
     setShowSettings(false);
   };
 
+  // Profile/cover photo handlers
+  const handleProfilePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        handleUpdateProfile({ avatar: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleCoverPhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        handleUpdateProfile({ coverPhoto: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   // View another user's profile
   const handleViewUserProfile = async (userId: string) => {
     if (userId === currentUser.id) {
@@ -2079,24 +2128,30 @@ export default function FacebookClone() {
       return;
     }
     
+    // Show loading state
+    setViewingUserId(userId);
+    setViewingUser(null); // Reset previous data to show loading
+    setViewingUserPosts([]);
+    setViewingUserFriends([]);
+    
     try {
-      // Fetch user data
-      const userRes = await fetch(`/api/users/${userId}`);
-      const userData = await userRes.json();
+      // Fetch all data in parallel
+      const [userRes, postsRes, friendsRes] = await Promise.all([
+        fetch(`/api/users/${userId}`),
+        fetch(`/api/posts?userId=${userId}&limit=20`),
+        fetch(`/api/friends?type=friends&userId=${userId}`)
+      ]);
+      
+      const [userData, postsData, friendsData] = await Promise.all([
+        userRes.json(),
+        postsRes.json(),
+        friendsRes.json()
+      ]);
       
       if (userData.user) {
         setViewingUser(userData.user);
-        setViewingUserId(userId);
         setViewingUserTab('Posts');
-        
-        // Fetch user's posts
-        const postsRes = await fetch(`/api/posts?userId=${userId}&limit=20`);
-        const postsData = await postsRes.json();
         setViewingUserPosts(postsData.posts || []);
-        
-        // Fetch user's friends
-        const friendsRes = await fetch(`/api/friends?type=friends&userId=${userId}`);
-        const friendsData = await friendsRes.json();
         setViewingUserFriends(friendsData.friends || []);
       }
     } catch (error) {
@@ -2224,37 +2279,46 @@ export default function FacebookClone() {
 
   const renderBottomNav = () => (
     <motion.nav 
-      className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t"
+      className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t shadow-lg"
       initial={{ y: 60 }}
       animate={{ y: 0 }}
     >
-      <div className="flex justify-around items-center h-12 px-1">
+      <div className="flex justify-around items-center h-14 px-1">
         {[
-          { id: 'home', icon: Home, label: 'Home' },
-          { id: 'friends', icon: Users, label: 'Friends', badge: friendRequestCount },
-          { id: 'watch', icon: Play, label: 'Watch' },
-          { id: 'marketplace', icon: ShoppingBag, label: 'Market' },
-          { id: 'notifications', icon: Bell, label: 'Alerts', badge: unreadNotifications },
-          { id: 'menu', icon: Menu, label: 'Menu' },
-        ].map(({ id, icon: Icon, label, badge }) => (
+          { id: 'home', icon: Home, label: 'Home', gradient: 'from-blue-500 to-blue-600' },
+          { id: 'friends', icon: Users, label: 'Friends', badge: friendRequestCount, gradient: 'from-indigo-500 to-purple-600' },
+          { id: 'watch', icon: Play, label: 'Watch', gradient: 'from-pink-500 to-rose-600' },
+          { id: 'marketplace', icon: ShoppingBag, label: 'Market', gradient: 'from-cyan-500 to-teal-600' },
+          { id: 'notifications', icon: Bell, label: 'Alerts', badge: unreadNotifications, gradient: 'from-orange-500 to-amber-600' },
+          { id: 'menu', icon: Menu, label: 'Menu', gradient: 'from-gray-600 to-gray-800' },
+        ].map(({ id, icon: Icon, label, badge, gradient }) => (
           <button
             key={id}
             onClick={() => id === 'menu' ? setShowSettings(true) : setCurrentPage(id)}
-            className="flex flex-col items-center justify-center px-3 py-1 relative"
+            className="flex flex-col items-center justify-center px-3 py-1.5 relative group"
           >
-            <div className="relative">
-              <Icon className={cn("w-6 h-6", currentPage === id ? "text-[#1877F2]" : "text-gray-500")} />
+            <div className={cn(
+              "relative p-1.5 rounded-xl transition-all duration-200",
+              currentPage === id && `bg-gradient-to-br ${gradient} shadow-lg`
+            )}>
+              <Icon className={cn(
+                "w-6 h-6 transition-all duration-200",
+                currentPage === id ? "text-white" : "text-gray-500 group-hover:scale-110"
+              )} />
               {badge && badge > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-gradient-to-r from-red-500 to-red-600 text-white text-[10px] rounded-full flex items-center justify-center font-bold shadow-md">
                   {badge > 9 ? '9+' : badge}
                 </span>
               )}
             </div>
-            <span className={cn("text-[10px] mt-0.5", currentPage === id ? "text-[#1877F2] font-medium" : "text-gray-500")}>
+            <span className={cn(
+              "text-[10px] mt-1 transition-all duration-200",
+              currentPage === id ? `font-semibold bg-gradient-to-r ${gradient} bg-clip-text text-transparent` : "text-gray-500 group-hover:text-gray-700"
+            )}>
               {label}
             </span>
             {currentPage === id && (
-              <motion.div layoutId="activeTab" className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-6 h-1 bg-[#1877F2] rounded-t-full" />
+              <motion.div layoutId="activeTab" className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-8 h-1 bg-gradient-to-r from-blue-500 to-purple-600 rounded-t-full shadow-sm" />
             )}
           </button>
         ))}
@@ -2278,9 +2342,9 @@ export default function FacebookClone() {
   );
 
   const renderCreatePost = () => (
-    <div className="bg-white p-3 border-b">
+    <div className="bg-white p-3 border-b shadow-sm">
       <div className="flex items-center gap-3">
-        <Avatar className="w-10 h-10">
+        <Avatar className="w-10 h-10 ring-2 ring-gray-100">
           <AvatarImage src={currentUser.avatar} />
         </Avatar>
         <button
@@ -2292,16 +2356,22 @@ export default function FacebookClone() {
       </div>
       <Separator className="my-2" />
       <div className="flex justify-around">
-        <button className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-100">
-          <Video className="w-6 h-6 text-red-500" />
+        <button className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-50 active:scale-95 transition-all group">
+          <div className="w-7 h-7 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg flex items-center justify-center shadow-sm group-hover:shadow transition-shadow">
+            <Video className="w-4 h-4 text-white" />
+          </div>
           <span className="text-xs font-medium text-gray-600">Live</span>
         </button>
-        <button onClick={() => setShowCreatePost(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-100">
-          <ImageIcon className="w-6 h-6 text-green-500" />
+        <button onClick={() => setShowCreatePost(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-50 active:scale-95 transition-all group">
+          <div className="w-7 h-7 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center shadow-sm group-hover:shadow transition-shadow">
+            <ImageIcon className="w-4 h-4 text-white" />
+          </div>
           <span className="text-xs font-medium text-gray-600">Photo</span>
         </button>
-        <button className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-100">
-          <Smile className="w-6 h-6 text-yellow-500" />
+        <button className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-50 active:scale-95 transition-all group">
+          <div className="w-7 h-7 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-lg flex items-center justify-center shadow-sm group-hover:shadow transition-shadow">
+            <Smile className="w-4 h-4 text-white" />
+          </div>
           <span className="text-xs font-medium text-gray-600">Feeling</span>
         </button>
       </div>
@@ -2728,11 +2798,11 @@ export default function FacebookClone() {
               
               <div className="grid grid-cols-4 gap-1 py-2">
                 {[
-                  { icon: Users, label: 'Friends', color: 'from-blue-400 to-blue-600', page: 'friends' },
-                  { icon: Clock, label: 'Memories', color: 'from-purple-400 to-purple-600', page: null },
-                  { icon: Bookmark, label: 'Saved', color: 'from-purple-500 to-pink-500', page: null },
-                  { icon: Users, label: 'Groups', color: 'from-blue-400 to-blue-600', page: 'groups' },
-                ].map(({ icon: Icon, label, color, page }) => (
+                  { icon: Users, label: 'Friends', gradient: 'from-indigo-500 to-purple-600', page: 'friends' },
+                  { icon: Clock, label: 'Memories', gradient: 'from-violet-500 to-purple-600', page: null },
+                  { icon: Bookmark, label: 'Saved', gradient: 'from-fuchsia-500 to-pink-600', page: null },
+                  { icon: Users, label: 'Groups', gradient: 'from-blue-500 to-cyan-600', page: 'groups' },
+                ].map(({ icon: Icon, label, gradient, page }) => (
                   <button 
                     key={label} 
                     onClick={() => {
@@ -2741,12 +2811,12 @@ export default function FacebookClone() {
                         setCurrentPage(page);
                       }
                     }}
-                    className="flex flex-col items-center gap-1 p-2 rounded-lg hover:bg-gray-100"
+                    className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-gray-50 active:scale-95 transition-all group"
                   >
-                    <div className={cn("w-10 h-10 rounded-full bg-gradient-to-br flex items-center justify-center", color)}>
+                    <div className={cn("w-11 h-11 rounded-xl bg-gradient-to-br flex items-center justify-center shadow-md group-hover:shadow-lg group-hover:scale-105 transition-all", gradient)}>
                       <Icon className="w-5 h-5 text-white" />
                     </div>
-                    <span className="text-[10px] text-gray-600">{label}</span>
+                    <span className="text-[10px] text-gray-600 font-medium">{label}</span>
                   </button>
                 ))}
               </div>
@@ -2754,26 +2824,26 @@ export default function FacebookClone() {
               <Separator className="my-2" />
               
               {[
-                { icon: Video, label: 'Video', page: 'watch' },
-                { icon: ShoppingBag, label: 'Marketplace', page: 'marketplace' },
-                { icon: Calendar, label: 'Events', page: 'events' },
-                { icon: Flag, label: 'Pages', page: 'pages' },
-                { icon: Gamepad2, label: 'Gaming', page: 'gaming' },
-                { icon: Star, label: 'Favorites', page: 'favorites' },
-              ].map(({ icon: Icon, label, page }) => (
+                { icon: Video, label: 'Video', page: 'watch', gradient: 'from-pink-500 to-rose-600' },
+                { icon: ShoppingBag, label: 'Marketplace', page: 'marketplace', gradient: 'from-cyan-500 to-teal-600' },
+                { icon: Calendar, label: 'Events', page: 'events', gradient: 'from-purple-500 to-indigo-600' },
+                { icon: Flag, label: 'Pages', page: 'pages', gradient: 'from-orange-500 to-amber-600' },
+                { icon: Gamepad2, label: 'Gaming', page: 'gaming', gradient: 'from-green-500 to-emerald-600' },
+                { icon: Star, label: 'Favorites', page: 'favorites', gradient: 'from-yellow-500 to-orange-500' },
+              ].map(({ icon: Icon, label, page, gradient }) => (
                 <button 
                   key={label} 
                   onClick={() => {
                     setShowSettings(false);
                     if (page) setCurrentPage(page);
                   }}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100"
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 active:scale-[0.98] transition-all group"
                 >
-                  <div className="w-9 h-9 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center">
+                  <div className={`w-10 h-10 bg-gradient-to-br ${gradient} rounded-xl flex items-center justify-center shadow-md group-hover:shadow-lg transition-shadow`}>
                     <Icon className="w-5 h-5 text-white" />
                   </div>
                   <span className="flex-1 text-left font-medium">{label}</span>
-                  <ChevronRight className="w-5 h-5 text-gray-400" />
+                  <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-gray-600 transition-colors" />
                 </button>
               ))}
               
@@ -2782,20 +2852,24 @@ export default function FacebookClone() {
               <p className="text-xs font-semibold text-gray-500 px-3 py-2">HELP & SETTINGS</p>
               
               {[
-                { icon: Settings, label: 'Settings & privacy', section: 'settings' },
-                { icon: HelpCircle, label: 'Help Center' },
-                { icon: MessageSquare, label: 'Give feedback' },
-              ].map(({ icon: Icon, label, section }) => (
-                <button key={label} onClick={() => section && setSettingsSection(section)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100">
-                  <Icon className="w-6 h-6 text-gray-600" />
-                  <span className="flex-1 text-left">{label}</span>
-                  <ChevronRight className="w-5 h-5 text-gray-400" />
+                { icon: Settings, label: 'Settings & privacy', section: 'settings', gradient: 'from-gray-600 to-gray-800' },
+                { icon: HelpCircle, label: 'Help Center', gradient: 'from-blue-500 to-indigo-600' },
+                { icon: MessageSquare, label: 'Give feedback', gradient: 'from-teal-500 to-cyan-600' },
+              ].map(({ icon: Icon, label, section, gradient }) => (
+                <button key={label} onClick={() => section && setSettingsSection(section)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 active:scale-[0.98] transition-all group">
+                  <div className={`w-10 h-10 bg-gradient-to-br ${gradient} rounded-xl flex items-center justify-center shadow-md group-hover:shadow-lg transition-shadow`}>
+                    <Icon className="w-5 h-5 text-white" />
+                  </div>
+                  <span className="flex-1 text-left font-medium">{label}</span>
+                  <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-gray-600 transition-colors" />
                 </button>
               ))}
               
-              <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 text-red-500">
-                <LogOut className="w-6 h-6" />
-                <span>Log Out</span>
+              <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-red-50 active:scale-[0.98] transition-all group mt-2">
+                <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-rose-600 rounded-xl flex items-center justify-center shadow-md group-hover:shadow-lg transition-shadow">
+                  <LogOut className="w-5 h-5 text-white" />
+                </div>
+                <span className="flex-1 text-left font-medium text-red-600">Log Out</span>
               </button>
               
               <p className="text-center text-xs text-gray-400 py-4">FACEBOOK © 2024</p>
@@ -3052,11 +3126,27 @@ export default function FacebookClone() {
 
     return (
       <div className="bg-white min-h-screen">
+        {/* Hidden file inputs */}
+        <input
+          ref={profilePhotoInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleProfilePhotoSelect}
+          className="hidden"
+        />
+        <input
+          ref={coverPhotoInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleCoverPhotoSelect}
+          className="hidden"
+        />
+        
         <div className="relative h-48 bg-gray-200">
           {currentUser.coverPhoto && <img src={currentUser.coverPhoto} className="w-full h-full object-cover" alt="" />}
           <button 
-            onClick={() => fileInputRef.current?.click()}
-            className="absolute bottom-3 right-3 bg-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 shadow-lg"
+            onClick={() => coverPhotoInputRef.current?.click()}
+            className="absolute bottom-3 right-3 bg-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 shadow-lg hover:bg-gray-50 transition-colors"
           >
             <Camera className="w-4 h-4" /> Edit cover photo
           </button>
@@ -3066,7 +3156,10 @@ export default function FacebookClone() {
             <Avatar className="w-36 h-36 border-4 border-white shadow-lg">
               <AvatarImage src={currentUser.avatar} className="object-cover" />
             </Avatar>
-            <button className="absolute bottom-1 right-1 w-9 h-9 bg-gray-200 rounded-full flex items-center justify-center shadow">
+            <button 
+              onClick={() => profilePhotoInputRef.current?.click()}
+              className="absolute bottom-1 right-1 w-9 h-9 bg-gray-200 rounded-full flex items-center justify-center shadow hover:bg-gray-300 transition-colors"
+            >
               <Camera className="w-5 h-5 text-gray-600" />
             </button>
           </div>
@@ -3398,7 +3491,12 @@ export default function FacebookClone() {
       {/* User Profile Modal - View other user's profile */}
       <Dialog open={!!viewingUserId} onOpenChange={(open) => !open && handleCloseUserProfile()}>
         <DialogContent className="max-w-lg p-0 gap-0 max-h-[90vh] overflow-y-auto">
-          {viewingUser && (
+          <DialogTitle className="sr-only">{viewingUser ? `${viewingUser.firstName} ${viewingUser.lastName}'s Profile` : 'User Profile'}</DialogTitle>
+          {!viewingUser ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-[#1877F2]" />
+            </div>
+          ) : (
             <>
               {/* Cover Photo */}
               <div className="relative h-40 bg-gray-200">
