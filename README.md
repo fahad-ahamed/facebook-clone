@@ -6,6 +6,7 @@ A comprehensive Facebook clone built with Next.js 16, TypeScript, Tailwind CSS 4
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=flat-square&logo=typescript)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-38B2AC?style=flat-square&logo=tailwind-css)
 ![Prisma](https://img.shields.io/badge/Prisma-ORM-2D3748?style=flat-square&logo=prisma)
+![WebSocket](https://img.shields.io/badge/WebSocket-Socket.io-010101?style=flat-square&logo=socket.io)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 
 ## Features
@@ -59,10 +60,29 @@ A comprehensive Facebook clone built with Next.js 16, TypeScript, Tailwind CSS 4
 - Visibility-aware search results
 - Categorized results (Users, Posts, Groups, Pages, Events, Marketplace)
 
-### Communication
-- **Direct Messaging** with real-time updates
-- **Media Sharing** in messages (photos/videos)
-- **Online Status** indicators
+### Messaging System (NEW!)
+- **Real-time Messaging** via WebSocket (Socket.io)
+- **Audio & Video Calls** with WebRTC signaling
+  - Call states: Calling, Ringing, Connected, Ended, Missed, Declined
+  - Call duration tracking
+  - Full-screen call UI with avatar display
+- **Voice Messages** 
+  - Record and send voice messages
+  - Waveform visualization
+  - Duration display
+  - Playback controls
+- **File Attachments**
+  - Photos (image/jpeg, image/png, image/gif, image/webp)
+  - Videos (video/mp4, video/webm, video/quicktime)
+  - Documents (PDF, DOC, DOCX, TXT)
+  - File size and name display
+- **Message Delivery Status**
+  - ✓ Sent (single gray check)
+  - ✓✓ Delivered (double gray check)
+  - ✓✓ Read (double blue check)
+- **Typing Indicators** - Real-time typing status
+- **End-to-End Encryption** indicator with lock icon
+- **Online/Offline Status** indicators
 - **Message Requests** settings
 
 ### Friends System
@@ -104,9 +124,27 @@ A comprehensive Facebook clone built with Next.js 16, TypeScript, Tailwind CSS 4
 - **Language:** TypeScript 5
 - **Styling:** Tailwind CSS 4 + shadcn/ui components
 - **Database:** Prisma ORM with SQLite
+- **Real-time:** Socket.io for WebSocket communication
 - **Animation:** Framer Motion
 - **Icons:** Lucide React
 - **Email:** Resend API (optional)
+
+## Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Next.js App   │────▶│   REST API      │────▶│   SQLite DB     │
+│   (Port 3000)   │     │   /api/*        │     │   (Prisma)      │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+        │
+        │ WebSocket
+        ▼
+┌─────────────────┐
+│  Socket.io      │
+│  (Port 3003)    │
+│  Real-time Chat │
+└─────────────────┘
+```
 
 ## Getting Started
 
@@ -118,11 +156,14 @@ A comprehensive Facebook clone built with Next.js 16, TypeScript, Tailwind CSS 4
 
 ```bash
 # Clone the repository
-git clone https://github.com/fahad-ahamed/facebook-clone.git
+git clone https://github.com/yourusername/facebook-clone.git
 cd facebook-clone
 
 # Install dependencies
 bun install
+
+# Install mini-service dependencies
+cd mini-services/chat-service && bun install && cd ../..
 
 # Set up environment variables
 cp .env.example .env
@@ -134,7 +175,11 @@ bun run db:push
 # (Optional) Seed test users
 bun run prisma/seed-users.ts
 
-# Start development server
+# Start development server (Next.js auto-starts)
+# Start WebSocket service manually:
+cd mini-services/chat-service && bun run dev &
+
+# Or run everything with:
 bun run dev
 ```
 
@@ -156,7 +201,8 @@ The project uses Prisma with the following main models:
 - **Post** - User posts with media, reactions, comments, custom visibility
 - **Story** - 24-hour ephemeral content
 - **Reel** - Short-form vertical videos
-- **Message/Conversation** - Direct messaging system
+- **Message/Conversation** - Direct messaging system with encryption support
+- **Call** - Audio/Video call records with duration tracking
 - **Friendship/FriendRequest** - Social connections
 - **Notification** - User notifications
 - **Group/Page/Event** - Community features
@@ -213,6 +259,17 @@ The project uses Prisma with the following main models:
 - `GET /api/conversations/[id]` - Get messages
 - `POST /api/conversations/[id]` - Send message
 
+### WebSocket Events (Port 3003)
+- `auth` - Authenticate user
+- `join-conversation` - Join a chat room
+- `typing-start/typing-stop` - Typing indicators
+- `send-message` - Send real-time message
+- `message-delivered` - Delivery confirmation
+- `message-read` - Read receipt
+- `call-initiate` - Start audio/video call
+- `call-answer/call-decline/call-end` - Call handling
+- `webrtc-offer/webrtc-answer/webrtc-ice-candidate` - WebRTC signaling
+
 ### Search
 - `GET /api/search` - Global search (users, posts, groups, pages, events, marketplace)
 
@@ -234,24 +291,55 @@ The project uses Prisma with the following main models:
 ```
 facebook-clone/
 ├── prisma/
-│   ├── schema.prisma      # Database schema
-│   └── seed-users.ts      # Test user seeder
+│   ├── schema.prisma          # Database schema
+│   └── seed-users.ts          # Test user seeder
+├── mini-services/
+│   └── chat-service/
+│       ├── index.ts           # Socket.io WebSocket server
+│       └── package.json       # Service dependencies
 ├── src/
 │   ├── app/
-│   │   ├── api/           # API routes
-│   │   ├── page.tsx       # Main application component
-│   │   └── layout.tsx     # Root layout
+│   │   ├── api/               # API routes
+│   │   │   ├── auth/          # Authentication endpoints
+│   │   │   ├── posts/         # Posts endpoints
+│   │   │   ├── conversations/ # Messaging endpoints
+│   │   │   ├── friends/       # Friends system
+│   │   │   ├── stories/       # Stories endpoints
+│   │   │   ├── reels/         # Reels endpoints
+│   │   │   ├── users/         # User management
+│   │   │   ├── search/        # Search functionality
+│   │   │   ├── groups/        # Groups endpoints
+│   │   │   ├── pages/         # Pages endpoints
+│   │   │   ├── events/        # Events endpoints
+│   │   │   ├── marketplace/   # Marketplace endpoints
+│   │   │   ├── notifications/ # Notifications
+│   │   │   ├── verification/  # Blue badge verification
+│   │   │   ├── admin/         # Admin panel
+│   │   │   ├── block/         # Block users
+│   │   │   ├── follow/        # Follow system
+│   │   │   ├── saved-posts/   # Saved posts
+│   │   │   ├── share/         # Share posts
+│   │   │   └── analytics/     # Analytics
+│   │   ├── page.tsx           # Main application component
+│   │   ├── layout.tsx         # Root layout
+│   │   └── globals.css        # Global styles
 │   ├── components/
-│   │   └── ui/            # shadcn/ui components
+│   │   └── ui/                # shadcn/ui components
 │   └── lib/
-│       ├── api.ts         # API client
-│       ├── auth.ts        # Auth utilities
-│       ├── db.ts          # Database client
-│       ├── hooks.ts       # Custom hooks
-│       └── utils.ts       # Utility functions
-├── public/                 # Static assets
-├── .env                    # Environment variables
-└── package.json            # Dependencies
+│       ├── api.ts             # API client
+│       ├── auth.ts            # Auth utilities
+│       ├── db.ts              # Database client
+│       ├── hooks.ts           # Custom hooks
+│       ├── jwt.ts             # JWT utilities
+│       ├── email.ts           # Email service
+│       ├── rate-limit.ts      # Rate limiting
+│       ├── feed-ranking.ts    # Feed algorithm
+│       ├── auth-store.ts      # Auth state management
+│       └── utils.ts           # Utility functions
+├── public/                     # Static assets
+├── .env                        # Environment variables
+├── Caddyfile                   # Gateway configuration
+└── package.json                # Dependencies
 ```
 
 ## Key Components
@@ -260,7 +348,13 @@ facebook-clone/
 - **AuthScreen** - Login/Register with email verification
 - **PostItem** - Post display with reactions, comments, share
 - **StoryRing/StoryViewer** - Stories feature
-- **ChatView** - Messaging interface
+- **ChatView** - Messaging interface with:
+  - Audio/Video call UI
+  - Voice message recording
+  - File attachments
+  - Message status indicators
+  - Typing indicators
+  - E2E encryption badge
 - **ShareModal** - Share post options
 - **ReactionViewersDialog** - See who reacted
 - **VideoPlayer** - Adaptive quality video player
@@ -270,7 +364,16 @@ facebook-clone/
 
 ## Recent Updates
 
-### Version 3.0 (Latest)
+### Version 4.0 (Latest)
+- ✅ Audio & Video Call system in messaging
+- ✅ Voice message recording with waveform visualization
+- ✅ File/document/photo/video attachments in chat
+- ✅ Message delivery status (✓ sent, ✓✓ delivered, ✓✓ blue read)
+- ✅ Typing indicators
+- ✅ End-to-end encryption indicator
+- ✅ WebSocket service with Socket.io
+
+### Version 3.0
 - ✅ Country system with 45+ countries selection
 - ✅ Optimized search (username, name, posts)
 - ✅ Media delete protection (author only)
@@ -295,6 +398,27 @@ facebook-clone/
 - Messaging
 - Settings & Privacy
 
+## WebSocket Service
+
+The chat service runs on port 3003 and provides real-time features:
+
+```typescript
+// Connect to WebSocket
+const socket = io('/?XTransformPort=3003')
+
+// Authenticate
+socket.emit('auth', { userId, username, avatar, conversations })
+
+// Send message
+socket.emit('send-message', { conversationId, content, ... })
+
+// Typing indicator
+socket.emit('typing-start', { conversationId, userId, userName })
+
+// Call signaling
+socket.emit('call-initiate', { callId, conversationId, callType, ... })
+```
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
@@ -309,5 +433,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Tailwind CSS](https://tailwindcss.com/)
 - [shadcn/ui](https://ui.shadcn.com/)
 - [Prisma](https://www.prisma.io/)
+- [Socket.io](https://socket.io/)
 - [Lucide Icons](https://lucide.dev/)
 - [Framer Motion](https://www.framer.com/motion/)
