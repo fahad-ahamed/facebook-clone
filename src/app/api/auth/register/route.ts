@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
 
     // Send verification email
     let emailSent = false;
-    let emailError = null;
+    let emailError: string | undefined = undefined;
     
     if (isEmailConfigured()) {
       const emailResult = await sendEmail({

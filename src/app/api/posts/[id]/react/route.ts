@@ -40,7 +40,7 @@ export async function POST(
       }
     });
 
-    let reaction = null;
+    let reaction: { userId: string; id: string; createdAt: Date; type: string; postId: string | null; commentId: string | null } | null = null;
     let newLikeCount = post.likeCount;
 
     if (existingReaction) {

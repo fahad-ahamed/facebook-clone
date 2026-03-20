@@ -19,6 +19,10 @@ export interface User {
   relationshipStatus?: string;
   isVerified: boolean;
   isOnline: boolean;
+  showOnlineStatus?: boolean;
+  profileVisibility?: string;
+  allowFriendRequests?: boolean;
+  allowMessageRequests?: boolean;
 }
 
 export interface Post {

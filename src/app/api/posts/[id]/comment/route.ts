@@ -151,7 +151,8 @@ export async function DELETE(
         id: true, 
         authorId: true, 
         postId: true,
-        parentId: true 
+        parentId: true,
+        deletedAt: true
       }
     });
 

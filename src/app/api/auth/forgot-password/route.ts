@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     // Send password reset email
     let emailSent = false;
-    let emailError = null;
+    let emailError: string | undefined = undefined;
 
     if (isEmailConfigured()) {
       const emailResult = await sendEmail({
