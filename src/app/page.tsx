@@ -19,7 +19,8 @@ import {
   ChevronRight, ChevronLeft, X, Plus, Check, Lock, Eye, EyeOff, 
   UserPlus, UserMinus, Camera, Edit, Trash2, Phone, Clock, Star, Gift, Music,
   Volume2, VolumeX, Shield, Key, Monitor, Globe2, MessageSquare,
-  BookOpen, Radio, HeartHandshake, Loader2, Film, Mail, ArrowLeft, Home as HomeIcon
+  BookOpen, Radio, HeartHandshake, Loader2, Film, Mail, ArrowLeft, Home as HomeIcon,
+  AtSign
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as api from '@/lib/api';
@@ -1426,6 +1427,7 @@ function EditProfileModal({ user, isOpen, onClose, onSave }: {
 }) {
   const [firstName, setFirstName] = useState(user.firstName);
   const [lastName, setLastName] = useState(user.lastName);
+  const [username, setUsername] = useState(user.username || '');
   const [bio, setBio] = useState(user.bio || '');
   const [currentCity, setCurrentCity] = useState(user.currentCity || '');
   const [hometown, setHometown] = useState(user.hometown || '');
@@ -1467,6 +1469,7 @@ function EditProfileModal({ user, isOpen, onClose, onSave }: {
     onSave({
       firstName,
       lastName,
+      username,
       bio,
       currentCity,
       hometown,
@@ -1569,6 +1572,19 @@ function EditProfileModal({ user, isOpen, onClose, onSave }: {
                   <label className="text-sm text-gray-500 mb-1 block">Last Name</label>
                   <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
                 </div>
+              </div>
+              <div>
+                <label className="text-sm text-gray-500 mb-1 block">Username</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">@</span>
+                  <Input 
+                    value={username} 
+                    onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} 
+                    placeholder="username"
+                    className="pl-7"
+                  />
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Your profile URL: facebook.com/{username || 'username'}</p>
               </div>
               <div>
                 <label className="text-sm text-gray-500 mb-1 block">Bio</label>
@@ -1824,6 +1840,27 @@ export default function FacebookClone() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [autoplayVideos, setAutoplayVideos] = useState(true);
+  
+  // Password Change States
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [passwordChangeLoading, setPasswordChangeLoading] = useState(false);
+  const [passwordChangeError, setPasswordChangeError] = useState('');
+  const [passwordChangeSuccess, setPasswordChangeSuccess] = useState(false);
+  const [showPasswordChangeVisibility, setShowPasswordChangeVisibility] = useState(false);
+  
+  // Dark Mode Effect
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
 
   // Transform API posts
   const posts: Post[] = React.useMemo(() => {
@@ -2121,6 +2158,79 @@ export default function FacebookClone() {
     }
   };
 
+  // Password change handler
+  const handlePasswordChange = async () => {
+    setPasswordChangeError('');
+    setPasswordChangeSuccess(false);
+    
+    if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+      setPasswordChangeError('Please fill in all fields');
+      return;
+    }
+    
+    if (passwordData.newPassword.length < 8) {
+      setPasswordChangeError('New password must be at least 8 characters');
+      return;
+    }
+    
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setPasswordChangeError('New passwords do not match');
+      return;
+    }
+    
+    setPasswordChangeLoading(true);
+    
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword: passwordData.currentPassword,
+          newPassword: passwordData.newPassword
+        })
+      });
+      
+      const data = await res.json();
+      
+      if (data.error) {
+        setPasswordChangeError(data.error);
+      } else {
+        setPasswordChangeSuccess(true);
+        setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        setTimeout(() => {
+          setShowPasswordChange(false);
+          setPasswordChangeSuccess(false);
+        }, 2000);
+      }
+    } catch (error) {
+      setPasswordChangeError('Failed to change password. Please try again.');
+    } finally {
+      setPasswordChangeLoading(false);
+    }
+  };
+
+  // Start or open chat with a user
+  const handleStartChat = async (userId: string) => {
+    try {
+      // Try to find existing conversation or create a new one
+      const res = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipientId: userId })
+      });
+      
+      const data = await res.json();
+      
+      if (data.conversation) {
+        setShowChat(data.conversation.id);
+      }
+    } catch (error) {
+      console.error('Error starting chat:', error);
+      // Fallback: just open chat with user ID as identifier
+      setShowChat(userId);
+    }
+  };
+
   // View another user's profile
   const handleViewUserProfile = async (userId: string) => {
     if (userId === currentUser.id) {
@@ -2230,7 +2340,7 @@ export default function FacebookClone() {
   
   const renderHeader = () => (
     <motion.header 
-      className="fixed top-0 left-0 right-0 z-50 bg-white shadow-sm"
+      className="fixed top-0 left-0 right-0 z-50 bg-white dark:bg-gray-800 shadow-sm"
       initial={{ y: -60 }}
       animate={{ y: 0 }}
     >
@@ -2246,7 +2356,7 @@ export default function FacebookClone() {
                 placeholder="Search Facebook"
                 value={searchQuery}
                 onChange={(e) => { setSearchQuery(e.target.value); search(e.target.value); }}
-                className="pl-9 bg-gray-100 border-0 rounded-full h-9"
+                className="pl-9 bg-gray-100 dark:bg-gray-700 border-0 rounded-full h-9"
                 autoFocus
               />
             </div>
@@ -2259,11 +2369,11 @@ export default function FacebookClone() {
               </div>
             </div>
             <div className="flex items-center gap-1">
-              <button onClick={() => setShowSearch(true)} className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center">
-                <Search className="w-5 h-5 text-gray-600" />
+              <button onClick={() => setShowSearch(true)} className="w-9 h-9 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                <Search className="w-5 h-5 text-gray-600 dark:text-gray-300" />
               </button>
-              <button onClick={() => setShowChat('list')} className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center relative">
-                <MessageCircle className="w-5 h-5 text-gray-600" />
+              <button onClick={() => setShowChat('list')} className="w-9 h-9 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center relative">
+                <MessageCircle className="w-5 h-5 text-gray-600 dark:text-gray-300" />
                 {unreadMessages > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
                     {unreadMessages}
@@ -2279,7 +2389,7 @@ export default function FacebookClone() {
 
   const renderBottomNav = () => (
     <motion.nav 
-      className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t shadow-lg"
+      className="fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-gray-800 border-t dark:border-gray-700 shadow-lg"
       initial={{ y: 60 }}
       animate={{ y: 0 }}
     >
@@ -2303,7 +2413,7 @@ export default function FacebookClone() {
             )}>
               <Icon className={cn(
                 "w-6 h-6 transition-all duration-200",
-                currentPage === id ? "text-white" : "text-gray-500 group-hover:scale-110"
+                currentPage === id ? "text-white" : "text-gray-500 dark:text-gray-400 group-hover:scale-110"
               )} />
               {badge && badge > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-gradient-to-r from-red-500 to-red-600 text-white text-[10px] rounded-full flex items-center justify-center font-bold shadow-md">
@@ -2313,7 +2423,7 @@ export default function FacebookClone() {
             </div>
             <span className={cn(
               "text-[10px] mt-1 transition-all duration-200",
-              currentPage === id ? `font-semibold bg-gradient-to-r ${gradient} bg-clip-text text-transparent` : "text-gray-500 group-hover:text-gray-700"
+              currentPage === id ? `font-semibold bg-gradient-to-r ${gradient} bg-clip-text text-transparent` : "text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-300"
             )}>
               {label}
             </span>
@@ -2327,7 +2437,7 @@ export default function FacebookClone() {
   );
 
   const renderStories = () => (
-    <div className="bg-white border-b">
+    <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
       <div className="flex gap-2 overflow-x-auto scrollbar-hide p-2">
         {stories.map((story, index) => (
           <StoryRing 
@@ -2342,37 +2452,37 @@ export default function FacebookClone() {
   );
 
   const renderCreatePost = () => (
-    <div className="bg-white p-3 border-b shadow-sm">
+    <div className="bg-white dark:bg-gray-800 p-3 border-b dark:border-gray-700 shadow-sm">
       <div className="flex items-center gap-3">
-        <Avatar className="w-10 h-10 ring-2 ring-gray-100">
+        <Avatar className="w-10 h-10 ring-2 ring-gray-100 dark:ring-gray-700">
           <AvatarImage src={currentUser.avatar} />
         </Avatar>
         <button
           onClick={() => setShowCreatePost(true)}
-          className="flex-1 h-10 bg-gray-100 rounded-full px-4 text-left text-gray-500 hover:bg-gray-200 transition-colors text-[15px]"
+          className="flex-1 h-10 bg-gray-100 dark:bg-gray-700 rounded-full px-4 text-left text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-[15px]"
         >
           What's on your mind, {currentUser.firstName}?
         </button>
       </div>
-      <Separator className="my-2" />
+      <Separator className="my-2 dark:bg-gray-700" />
       <div className="flex justify-around">
-        <button className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-50 active:scale-95 transition-all group">
+        <button className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 active:scale-95 transition-all group">
           <div className="w-7 h-7 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg flex items-center justify-center shadow-sm group-hover:shadow transition-shadow">
             <Video className="w-4 h-4 text-white" />
           </div>
-          <span className="text-xs font-medium text-gray-600">Live</span>
+          <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Live</span>
         </button>
-        <button onClick={() => setShowCreatePost(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-50 active:scale-95 transition-all group">
+        <button onClick={() => setShowCreatePost(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 active:scale-95 transition-all group">
           <div className="w-7 h-7 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center shadow-sm group-hover:shadow transition-shadow">
             <ImageIcon className="w-4 h-4 text-white" />
           </div>
-          <span className="text-xs font-medium text-gray-600">Photo</span>
+          <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Photo</span>
         </button>
-        <button className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-50 active:scale-95 transition-all group">
+        <button className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 active:scale-95 transition-all group">
           <div className="w-7 h-7 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-lg flex items-center justify-center shadow-sm group-hover:shadow transition-shadow">
             <Smile className="w-4 h-4 text-white" />
           </div>
-          <span className="text-xs font-medium text-gray-600">Feeling</span>
+          <span className="text-xs font-medium text-gray-600 dark:text-gray-300">Feeling</span>
         </button>
       </div>
     </div>
@@ -2382,9 +2492,9 @@ export default function FacebookClone() {
     <div>
       {renderStories()}
       {renderCreatePost()}
-      <div className="bg-white p-3 border-b">
+      <div className="bg-white dark:bg-gray-800 p-3 border-b dark:border-gray-700">
         <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-          <button className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-600 rounded-full text-sm font-medium">
+          <button className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-full text-sm font-medium">
             <Video className="w-5 h-5" />
             Create Room
           </button>
@@ -2393,7 +2503,7 @@ export default function FacebookClone() {
               <Avatar className="w-10 h-10 cursor-pointer hover:opacity-80">
                 <AvatarImage src={c.user.avatar} />
               </Avatar>
-              <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
+              <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-800" />
             </div>
           ))}
         </div>
@@ -2416,7 +2526,7 @@ export default function FacebookClone() {
           />
         ))
       ) : (
-        <div className="bg-white p-8 text-center text-gray-500">
+        <div className="bg-white dark:bg-gray-800 p-8 text-center text-gray-500 dark:text-gray-400">
           <p>No posts yet. Create your first post!</p>
         </div>
       )}
@@ -2563,14 +2673,14 @@ export default function FacebookClone() {
   );
 
   const renderNotifications = () => (
-    <div className="bg-white min-h-screen p-3">
+    <div className="bg-white dark:bg-gray-800 min-h-screen p-3">
       <div className="flex items-center justify-between mb-3">
-        <h1 className="text-2xl font-bold">Notifications</h1>
+        <h1 className="text-2xl font-bold dark:text-white">Notifications</h1>
         <button onClick={markAllNotificationsRead} className="text-[#1877F2] text-sm font-medium">Mark all as read</button>
       </div>
       <div className="flex gap-2 mb-4">
         {['All', 'Unread'].map((tab, i) => (
-          <button key={tab} className={cn("px-4 py-2 rounded-full text-sm font-medium", i === 0 ? "bg-[#1877F2] text-white" : "bg-gray-100 text-gray-600")}>
+          <button key={tab} className={cn("px-4 py-2 rounded-full text-sm font-medium", i === 0 ? "bg-[#1877F2] text-white" : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300")}>
             {tab}
           </button>
         ))}
@@ -2581,21 +2691,21 @@ export default function FacebookClone() {
             <div
               key={notif.id}
               onClick={() => markNotificationRead(notif.id)}
-              className={cn("flex gap-3 p-3 rounded-xl cursor-pointer", !notif.isRead && "bg-blue-50")}
+              className={cn("flex gap-3 p-3 rounded-xl cursor-pointer", !notif.isRead && "bg-blue-50 dark:bg-blue-900/20")}
             >
               <Avatar className="w-14 h-14">
                 <AvatarImage src={notif.image || notif.actor?.avatar} />
               </Avatar>
               <div className="flex-1 min-w-0">
-                <p className={cn("text-sm", !notif.isRead && "font-semibold")}>{notif.message}</p>
+                <p className={cn("text-sm dark:text-gray-200", !notif.isRead && "font-semibold")}>{notif.message}</p>
                 <p className="text-xs text-[#1877F2] font-medium mt-0.5">{formatDistanceToNow(notif.createdAt)}</p>
               </div>
               {!notif.isRead && <div className="w-2.5 h-2.5 bg-[#1877F2] rounded-full mt-2" />}
             </div>
           ))
         ) : (
-          <div className="text-center py-8 text-gray-500">
-            <Bell className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+            <Bell className="w-12 h-12 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
             <p>No notifications yet</p>
           </div>
         )}
@@ -2888,7 +2998,14 @@ export default function FacebookClone() {
                 {/* Personal Information Section */}
                 <div className="space-y-2">
                   <p className="font-semibold text-gray-500 text-xs">PERSONAL INFORMATION</p>
-                  <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                  <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <AtSign className="w-5 h-5 text-gray-500" />
+                      <div className="flex-1">
+                        <p className="text-xs text-gray-500">Username</p>
+                        <p className="text-sm font-medium">@{currentUser.username || 'not_set'}</p>
+                      </div>
+                    </div>
                     <div className="flex items-center gap-3">
                       <Mail className="w-5 h-5 text-gray-500" />
                       <div className="flex-1">
@@ -2932,13 +3049,16 @@ export default function FacebookClone() {
                   <p className="font-semibold text-gray-500 text-xs">ACCOUNT</p>
                   <button 
                     onClick={() => { setShowSettings(false); setShowEditProfile(true); }}
-                    className="w-full flex items-center gap-3 p-3 bg-gray-50 rounded-xl"
+                    className="w-full flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl"
                   >
                     <Edit className="w-5 h-5 text-gray-600" />
                     <span className="flex-1 text-left font-medium text-sm">Edit profile</span>
                     <ChevronRight className="w-5 h-5 text-gray-400" />
                   </button>
-                  <button className="w-full flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                  <button 
+                    onClick={() => setShowPasswordChange(true)}
+                    className="w-full flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl"
+                  >
                     <Key className="w-5 h-5 text-gray-600" />
                     <span className="flex-1 text-left font-medium text-sm">Password and security</span>
                     <ChevronRight className="w-5 h-5 text-gray-400" />
@@ -2947,28 +3067,28 @@ export default function FacebookClone() {
                 
                 <div className="space-y-2">
                   <p className="font-semibold text-gray-500 text-xs">PREFERENCES</p>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-xl">
                     <div className="flex items-center gap-3">
                       <Moon className="w-5 h-5 text-gray-600" />
                       <span>Dark mode</span>
                     </div>
                     <Switch checked={darkMode} onCheckedChange={setDarkMode} />
                   </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-xl">
                     <div className="flex items-center gap-3">
                       <Bell className="w-5 h-5 text-gray-600" />
                       <span>Notifications</span>
                     </div>
                     <Switch checked={notificationsEnabled} onCheckedChange={setNotificationsEnabled} />
                   </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-xl">
                     <div className="flex items-center gap-3">
                       <Volume2 className="w-5 h-5 text-gray-600" />
                       <span>Sound</span>
                     </div>
                     <Switch checked={soundEnabled} onCheckedChange={setSoundEnabled} />
                   </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-xl">
                     <div className="flex items-center gap-3">
                       <Play className="w-5 h-5 text-gray-600" />
                       <span>Autoplay videos</span>
@@ -3458,7 +3578,7 @@ export default function FacebookClone() {
 
   // ============ MAIN RENDER ============
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className={cn("min-h-screen bg-gray-100 dark:bg-gray-900", darkMode && "dark")}>
       {renderHeader()}
       <main className="pt-12 pb-12">
         <AnimatePresence mode="wait">
@@ -3478,6 +3598,85 @@ export default function FacebookClone() {
       {renderBottomNav()}
       {renderSettings()}
       {renderCreatePostModal()}
+      
+      {/* Password Change Dialog */}
+      <Dialog open={showPasswordChange} onOpenChange={setShowPasswordChange}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Change Password</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {passwordChangeSuccess ? (
+              <div className="bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 p-4 rounded-lg text-center">
+                <Check className="w-8 h-8 mx-auto mb-2" />
+                <p>Password changed successfully!</p>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="text-sm text-gray-500 mb-1 block">Current Password</label>
+                  <div className="relative">
+                    <Input
+                      type={showPasswordChangeVisibility ? 'text' : 'password'}
+                      value={passwordData.currentPassword}
+                      onChange={(e) => setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }))}
+                      placeholder="Enter current password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordChangeVisibility(!showPasswordChangeVisibility)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2"
+                    >
+                      {showPasswordChangeVisibility ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm text-gray-500 mb-1 block">New Password</label>
+                  <Input
+                    type="password"
+                    value={passwordData.newPassword}
+                    onChange={(e) => setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
+                    placeholder="Enter new password (min 8 characters)"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-500 mb-1 block">Confirm New Password</label>
+                  <Input
+                    type="password"
+                    value={passwordData.confirmPassword}
+                    onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                    placeholder="Confirm new password"
+                  />
+                </div>
+                {passwordChangeError && (
+                  <div className="text-red-500 text-sm">{passwordChangeError}</div>
+                )}
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowPasswordChange(false);
+                      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+                      setPasswordChangeError('');
+                    }}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handlePasswordChange}
+                    disabled={passwordChangeLoading}
+                    className="flex-1 bg-[#1877F2] hover:bg-[#166FE5]"
+                  >
+                    {passwordChangeLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Change Password'}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
       
       {/* Edit Profile Modal */}
       <EditProfileModal
@@ -3567,7 +3766,10 @@ export default function FacebookClone() {
                     Add Friend
                   </Button>
                   <Button 
-                    onClick={() => setShowChat(viewingUser.id)}
+                    onClick={() => {
+                      handleCloseUserProfile();
+                      handleStartChat(viewingUser.id);
+                    }}
                     variant="outline"
                     className="flex-1"
                   >
