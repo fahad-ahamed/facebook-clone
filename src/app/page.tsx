@@ -1423,7 +1423,7 @@ function EditProfileModal({ user, isOpen, onClose, onSave }: {
   user: UserType;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: Partial<UserType>) => void;
+  onSave: (data: Partial<UserType>) => Promise<{ error?: string } | void>;
 }) {
   const [firstName, setFirstName] = useState(user.firstName);
   const [lastName, setLastName] = useState(user.lastName);
@@ -1439,9 +1439,49 @@ function EditProfileModal({ user, isOpen, onClose, onSave }: {
   const [avatar, setAvatar] = useState(user.avatar || '');
   const [coverPhoto, setCoverPhoto] = useState(user.coverPhoto || '');
   const [activeTab, setActiveTab] = useState<'basic' | 'contact' | 'photos'>('basic');
+  const [usernameError, setUsernameError] = useState('');
+  const [checkingUsername, setCheckingUsername] = useState(false);
   
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const usernameCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Check username availability with debounce
+  const checkUsername = async (value: string) => {
+    if (!value || value === user.username) {
+      setUsernameError('');
+      return;
+    }
+    setCheckingUsername(true);
+    try {
+      const res = await fetch(`/api/users/check-username?username=${value.toLowerCase()}`);
+      const data = await res.json();
+      if (!data.available) {
+        setUsernameError('Username not available');
+      } else {
+        setUsernameError('');
+      }
+    } catch (error) {
+      console.error('Error checking username:', error);
+    } finally {
+      setCheckingUsername(false);
+    }
+  };
+
+  // Debounced username check
+  const handleUsernameChange = (value: string) => {
+    const sanitized = value.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    setUsername(sanitized);
+    setUsernameError('');
+    
+    if (usernameCheckTimeoutRef.current) {
+      clearTimeout(usernameCheckTimeoutRef.current);
+    }
+    
+    usernameCheckTimeoutRef.current = setTimeout(() => {
+      checkUsername(sanitized);
+    }, 500);
+  };
 
   const handleAvatarSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1465,23 +1505,35 @@ function EditProfileModal({ user, isOpen, onClose, onSave }: {
     }
   };
 
-  const handleSave = () => {
-    onSave({
-      firstName,
-      lastName,
-      username,
-      bio,
-      currentCity,
-      hometown,
-      workplace,
-      education,
-      phone,
-      gender,
-      dateOfBirth,
-      avatar,
-      coverPhoto
-    });
-    onClose();
+  const handleSave = async () => {
+    if (usernameError) return;
+    
+    try {
+      const result = await onSave({
+        firstName,
+        lastName,
+        username: username.toLowerCase(),
+        bio,
+        currentCity,
+        hometown,
+        workplace,
+        education,
+        phone,
+        gender,
+        dateOfBirth,
+        avatar,
+        coverPhoto
+      });
+      
+      if (result?.error === 'Username is already taken') {
+        setUsernameError('Username not available');
+        return;
+      }
+      
+      onClose();
+    } catch (error) {
+      console.error('Save error:', error);
+    }
   };
 
   return (
@@ -1579,12 +1631,19 @@ function EditProfileModal({ user, isOpen, onClose, onSave }: {
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">@</span>
                   <Input 
                     value={username} 
-                    onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} 
+                    onChange={(e) => handleUsernameChange(e.target.value)} 
                     placeholder="username"
-                    className="pl-7"
+                    className={cn("pl-7", usernameError && "border-red-500 focus:ring-red-500")}
                   />
+                  {checkingUsername && (
+                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-gray-400" />
+                  )}
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Your profile URL: facebook.com/{username || 'username'}</p>
+                {usernameError ? (
+                  <p className="text-xs text-red-500 mt-1">{usernameError}</p>
+                ) : (
+                  <p className="text-xs text-gray-400 mt-1">Your profile URL: facebook.com/{username || 'username'}</p>
+                )}
               </div>
               <div>
                 <label className="text-sm text-gray-500 mb-1 block">Bio</label>
@@ -1840,6 +1899,14 @@ export default function FacebookClone() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [autoplayVideos, setAutoplayVideos] = useState(true);
+  const [showOnlineStatus, setShowOnlineStatus] = useState(true);
+  const [whoCanSeePosts, setWhoCanSeePosts] = useState('friends');
+  const [whoCanAddFriends, setWhoCanAddFriends] = useState('everyone');
+  const [whoCanMessage, setWhoCanMessage] = useState('everyone');
+  const [viewingFullImage, setViewingFullImage] = useState<string | null>(null);
+  const [loggedInDevices, setLoggedInDevices] = useState([
+    { id: '1', device: 'Chrome on Windows', location: 'Dhaka, Bangladesh', lastActive: new Date(), isCurrent: true },
+  ]);
   
   // Password Change States
   const [showPasswordChange, setShowPasswordChange] = useState(false);
@@ -1861,6 +1928,26 @@ export default function FacebookClone() {
       document.documentElement.classList.remove('dark');
     }
   }, [darkMode]);
+
+  // Save preferences to API
+  useEffect(() => {
+    const savePreferences = async () => {
+      try {
+        await api.updateUser({
+          showOnlineStatus,
+          profileVisibility: whoCanSeePosts,
+          allowFriendRequests: whoCanAddFriends === 'everyone',
+          allowMessageRequests: whoCanMessage === 'everyone'
+        });
+      } catch (error) {
+        console.error('Error saving preferences:', error);
+      }
+    };
+    
+    if (authUser) {
+      savePreferences();
+    }
+  }, [showOnlineStatus, whoCanSeePosts, whoCanAddFriends, whoCanMessage]);
 
   // Transform API posts
   const posts: Post[] = React.useMemo(() => {
@@ -2096,16 +2183,22 @@ export default function FacebookClone() {
     }
   };
 
-  const handleUpdateProfile = async (data: Partial<UserType>) => {
+  const handleUpdateProfile = async (data: Partial<UserType>): Promise<{ error?: string } | void> => {
     try {
-      await api.updateUser(data);
-      // Refresh user data
-      const res = await api.getCurrentUser();
-      if (res.user) {
-        setUser(res.user);
+      const res = await api.updateUser(data);
+      if (res?.error) {
+        return { error: res.error };
       }
-    } catch (error) {
+      // Refresh user data
+      const userRes = await api.getCurrentUser();
+      if (userRes.user) {
+        setUser(userRes.user);
+      }
+    } catch (error: any) {
       console.error('Update profile error:', error);
+      if (error?.message?.includes('username')) {
+        return { error: 'Username is already taken' };
+      }
     }
   };
 
@@ -3063,6 +3156,22 @@ export default function FacebookClone() {
                     <span className="flex-1 text-left font-medium text-sm">Password and security</span>
                     <ChevronRight className="w-5 h-5 text-gray-400" />
                   </button>
+                  <button 
+                    onClick={() => setSettingsSection('devices')}
+                    className="w-full flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl"
+                  >
+                    <Monitor className="w-5 h-5 text-gray-600" />
+                    <span className="flex-1 text-left font-medium text-sm">Where you're logged in</span>
+                    <ChevronRight className="w-5 h-5 text-gray-400" />
+                  </button>
+                  <button 
+                    onClick={() => setSettingsSection('privacy')}
+                    className="w-full flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl"
+                  >
+                    <Eye className="w-5 h-5 text-gray-600" />
+                    <span className="flex-1 text-left font-medium text-sm">Audience and visibility</span>
+                    <ChevronRight className="w-5 h-5 text-gray-400" />
+                  </button>
                 </div>
                 
                 <div className="space-y-2">
@@ -3073,6 +3182,13 @@ export default function FacebookClone() {
                       <span>Dark mode</span>
                     </div>
                     <Switch checked={darkMode} onCheckedChange={setDarkMode} />
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-xl">
+                    <div className="flex items-center gap-3">
+                      <div className="w-2.5 h-2.5 bg-green-500 rounded-full" />
+                      <span>Active status</span>
+                    </div>
+                    <Switch checked={showOnlineStatus} onCheckedChange={setShowOnlineStatus} />
                   </div>
                   <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-xl">
                     <div className="flex items-center gap-3">
@@ -3095,6 +3211,115 @@ export default function FacebookClone() {
                     </div>
                     <Switch checked={autoplayVideos} onCheckedChange={setAutoplayVideos} />
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {settingsSection === 'devices' && (
+            <div className="p-4">
+              <button onClick={() => setSettingsSection('settings')} className="flex items-center gap-2 mb-4 text-gray-600">
+                <ChevronLeft className="w-5 h-5" />
+                <span>Back</span>
+              </button>
+              <h2 className="text-lg font-bold mb-4">Where you're logged in</h2>
+              
+              <div className="space-y-3">
+                {loggedInDevices.map((device) => (
+                  <div key={device.id} className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-3">
+                        <Monitor className="w-5 h-5 text-gray-600 mt-0.5" />
+                        <div>
+                          <p className="font-medium text-sm">{device.device}</p>
+                          <p className="text-xs text-gray-500">{device.location}</p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {device.isCurrent ? (
+                              <span className="text-green-600 font-medium">Active now</span>
+                            ) : (
+                              `Last active ${formatDistanceToNow(device.lastActive.toISOString())}`
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      {device.isCurrent ? (
+                        <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">
+                          This device
+                        </span>
+                      ) : (
+                        <button className="text-xs text-red-600 hover:underline font-medium">
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {settingsSection === 'privacy' && (
+            <div className="p-4">
+              <button onClick={() => setSettingsSection('settings')} className="flex items-center gap-2 mb-4 text-gray-600">
+                <ChevronLeft className="w-5 h-5" />
+                <span>Back</span>
+              </button>
+              <h2 className="text-lg font-bold mb-4">Audience and visibility</h2>
+              
+              <div className="space-y-4">
+                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <Globe2 className="w-5 h-5 text-gray-600" />
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">Who can see your posts</p>
+                      <p className="text-xs text-gray-500">Control who sees your future posts</p>
+                    </div>
+                  </div>
+                  <select
+                    value={whoCanSeePosts}
+                    onChange={(e) => setWhoCanSeePosts(e.target.value)}
+                    className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="public">Public</option>
+                    <option value="friends">Friends</option>
+                    <option value="only_me">Only Me</option>
+                  </select>
+                </div>
+                
+                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <UserPlus className="w-5 h-5 text-gray-600" />
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">Who can send friend requests</p>
+                      <p className="text-xs text-gray-500">Control who can send you friend requests</p>
+                    </div>
+                  </div>
+                  <select
+                    value={whoCanAddFriends}
+                    onChange={(e) => setWhoCanAddFriends(e.target.value)}
+                    className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="everyone">Everyone</option>
+                    <option value="friends_of_friends">Friends of Friends</option>
+                  </select>
+                </div>
+                
+                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <MessageCircle className="w-5 h-5 text-gray-600" />
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">Who can message you</p>
+                      <p className="text-xs text-gray-500">Control who can send you messages</p>
+                    </div>
+                  </div>
+                  <select
+                    value={whoCanMessage}
+                    onChange={(e) => setWhoCanMessage(e.target.value)}
+                    className="w-full h-10 px-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="everyone">Everyone</option>
+                    <option value="friends">Friends</option>
+                  </select>
                 </div>
               </div>
             </div>
@@ -3698,12 +3923,15 @@ export default function FacebookClone() {
           ) : (
             <>
               {/* Cover Photo */}
-              <div className="relative h-40 bg-gray-200">
+              <div 
+                className="relative h-40 bg-gray-200 cursor-pointer"
+                onClick={() => viewingUser.coverPhoto && setViewingFullImage(viewingUser.coverPhoto)}
+              >
                 {viewingUser.coverPhoto && (
                   <img src={viewingUser.coverPhoto} className="w-full h-full object-cover" alt="" />
                 )}
                 <button
-                  onClick={handleCloseUserProfile}
+                  onClick={(e) => { e.stopPropagation(); handleCloseUserProfile(); }}
                   className="absolute top-2 left-2 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center"
                 >
                   <ArrowLeft className="w-5 h-5" />
@@ -3713,7 +3941,10 @@ export default function FacebookClone() {
               {/* Profile Picture */}
               <div className="relative px-4">
                 <div className="relative -mt-16 w-28 h-28">
-                  <Avatar className="w-28 h-28 border-4 border-white shadow-lg">
+                  <Avatar 
+                    className="w-28 h-28 border-4 border-white shadow-lg cursor-pointer hover:opacity-90"
+                    onClick={() => viewingUser.avatar && setViewingFullImage(viewingUser.avatar)}
+                  >
                     <AvatarImage src={viewingUser.avatar} className="object-cover" />
                   </Avatar>
                 </div>
@@ -3986,6 +4217,14 @@ export default function FacebookClone() {
           </motion.div>
         )}
       </AnimatePresence>
+      
+      {/* Full Image Viewer */}
+      <Dialog open={!!viewingFullImage} onOpenChange={() => setViewingFullImage(null)}>
+        <DialogContent className="max-w-3xl p-0 bg-black">
+          <DialogTitle className="sr-only">View Image</DialogTitle>
+          <img src={viewingFullImage || ''} alt="" className="w-full h-auto max-h-[80vh] object-contain" />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

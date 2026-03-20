@@ -64,18 +64,32 @@ export async function PUT(request: NextRequest) {
       relationshipStatus,
       phone,
       gender,
+      dateOfBirth,
       avatar,
       coverPhoto,
       language,
       theme
     } = body;
 
+    // Check username uniqueness if username is being changed
+    if (username) {
+      const existingUser = await db.user.findFirst({
+        where: {
+          username: username.toLowerCase(),
+          NOT: { id: authUser.userId }
+        }
+      });
+      if (existingUser) {
+        return NextResponse.json({ error: 'Username is already taken', field: 'username' }, { status: 400 });
+      }
+    }
+
     const updatedUser = await db.user.update({
       where: { id: authUser.userId },
       data: {
         firstName: firstName || undefined,
         lastName: lastName || undefined,
-        username: username || undefined,
+        username: username ? username.toLowerCase() : undefined,
         bio: bio || undefined,
         currentCity: currentCity || undefined,
         hometown: hometown || undefined,
@@ -84,6 +98,7 @@ export async function PUT(request: NextRequest) {
         relationshipStatus: relationshipStatus || undefined,
         phone: phone || undefined,
         gender: gender || undefined,
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
         avatar: avatar || undefined,
         coverPhoto: coverPhoto || undefined,
         language: language || undefined,
@@ -105,6 +120,7 @@ export async function PUT(request: NextRequest) {
         relationshipStatus: true,
         phone: true,
         gender: true,
+        dateOfBirth: true,
         isVerified: true,
         isAdmin: true,
         language: true,
