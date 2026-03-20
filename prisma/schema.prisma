@@ -106,6 +106,8 @@ model User {
   passwordResets      PasswordReset[]
   verificationTokens  VerificationToken[]
   verificationRequests VerificationRequest[]
+  callsAsCaller       Call[]            @relation("CallCaller")
+  callsAsReceiver     Call[]            @relation("CallReceiver")
 }
 
 model DeviceSession {
@@ -356,6 +358,7 @@ model Conversation {
   
   members         ConversationMember[]
   messages        Message[]
+  calls           Call[]
 }
 
 model ConversationMember {
@@ -384,13 +387,14 @@ model Message {
   
   // Content
   content         String?
-  messageType     String    @default("text") // text, image, video, audio, file, sticker, gif, location, contact
+  messageType     String    @default("text") // text, image, video, audio, voice, file, sticker, gif, location, contact, document
   mediaUrl        String?
   mediaType       String?
   fileName        String?
   fileSize        Int?
   stickerId       String?
   gifUrl          String?
+  voiceDuration   Int?      // Duration in seconds for voice messages
   
   // Reply & Forward
   replyToId       String?
@@ -399,12 +403,18 @@ model Message {
   forwarded       Boolean   @default(false)
   forwardedFrom   String?
   
-  // Status
+  // Delivery Status
+  status          String    @default("sent") // sending, sent, delivered, read, failed
+  deliveredAt     DateTime? // When message was delivered to recipient
+  readAt          DateTime? // When message was read by recipient
   isRead          Boolean   @default(false)
   readBy          String?   // JSON array of user IDs who read
   
   // Reactions
   reactions       String?   // JSON array of reactions
+  
+  // End-to-end encryption
+  isEncrypted     Boolean   @default(true)
   
   // Timestamps
   createdAt       DateTime  @default(now())
@@ -412,6 +422,31 @@ model Message {
   
   // For last message relation
   lastMessageOf   Conversation[] @relation("LastMessage")
+}
+
+// ==================== CALLS ====================
+
+model Call {
+  id              String    @id @default(cuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  callerId        String
+  caller          User      @relation("CallCaller", fields: [callerId], references: [id], onDelete: Cascade)
+  receiverId      String
+  receiver        User      @relation("CallReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  
+  // Call Details
+  callType        String    // audio, video
+  status          String    @default("calling") // calling, ringing, connected, ended, missed, declined
+  startedAt       DateTime? // When call was connected
+  endedAt         DateTime? // When call ended
+  duration        Int?      // Duration in seconds
+  
+  // Call Quality
+  connectionQuality String? // good, fair, poor
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
 
 // ==================== GROUPS ====================

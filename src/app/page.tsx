@@ -20,7 +20,9 @@ import {
   UserPlus, UserMinus, Camera, Edit, Trash2, Phone, Clock, Star, Gift, Music,
   Volume2, VolumeX, Shield, Key, Monitor, Globe2, MessageSquare,
   BookOpen, Radio, HeartHandshake, Loader2, Film, Mail, ArrowLeft, Home as HomeIcon,
-  AtSign, UsersRound, Copy, Link2, Wifi, WifiOff, UserCheck, BadgeCheck
+  AtSign, UsersRound, Copy, Link2, Wifi, WifiOff, UserCheck, BadgeCheck,
+  Mic, MicOff, FileText, Paperclip, PhoneOff, PhoneCall, VideoOff, File, 
+  Pause, Square, CheckCheck, FileAudio, FileVideo, FileImage
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as api from '@/lib/api';
@@ -121,6 +123,15 @@ interface MessageType {
   isRead: boolean;
   mediaUrl?: string;
   mediaType?: string;
+  // Enhanced message fields
+  messageType?: 'text' | 'image' | 'video' | 'audio' | 'voice' | 'file' | 'document' | 'sticker' | 'gif';
+  fileName?: string;
+  fileSize?: number;
+  voiceDuration?: number;
+  status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+  deliveredAt?: string;
+  readAt?: string;
+  isEncrypted?: boolean;
 }
 
 interface FriendRequestType {
@@ -1063,6 +1074,228 @@ function StoryViewer({ story, onClose, onNext, onPrev }: {
   );
 }
 
+// ============ MESSAGE STATUS COMPONENT ============
+function MessageStatus({ status, isOwn }: { status?: string; isOwn: boolean }) {
+  if (!isOwn || !status) return null;
+  
+  switch (status) {
+    case 'sending':
+      return <Clock className="w-3.5 h-3.5 text-gray-400 animate-pulse" />;
+    case 'sent':
+      return <Check className="w-3.5 h-3.5 text-gray-400" />;
+    case 'delivered':
+      return <CheckCheck className="w-3.5 h-3.5 text-gray-400" />;
+    case 'read':
+      return <CheckCheck className="w-3.5 h-3.5 text-blue-500" />;
+    case 'failed':
+      return <X className="w-3.5 h-3.5 text-red-500" />;
+    default:
+      return <Check className="w-3.5 h-3.5 text-gray-400" />;
+  }
+}
+
+// ============ CALL UI COMPONENT ============
+function CallUI({ 
+  callState, 
+  callType, 
+  callDuration, 
+  otherUser, 
+  onAnswer, 
+  onDecline, 
+  onEnd 
+}: { 
+  callState: 'idle' | 'calling' | 'ringing' | 'connected' | 'ended' | 'missed' | 'declined';
+  callType: 'audio' | 'video';
+  callDuration: number;
+  otherUser: UserType;
+  onAnswer?: () => void;
+  onDecline?: () => void;
+  onEnd?: () => void;
+}) {
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/95 z-[70] flex flex-col items-center justify-center"
+    >
+      {/* Caller Info */}
+      <div className="flex flex-col items-center mb-8">
+        <Avatar className="w-24 h-24 mb-4">
+          <AvatarImage src={otherUser.avatar} />
+          <AvatarFallback className="text-3xl">{getInitials(otherUser.firstName, otherUser.lastName)}</AvatarFallback>
+        </Avatar>
+        <h2 className="text-white text-xl font-semibold">
+          {otherUser.firstName} {otherUser.lastName}
+        </h2>
+        <p className="text-gray-400 mt-2">
+          {callState === 'calling' && 'Calling...'}
+          {callState === 'ringing' && 'Incoming call...'}
+          {callState === 'connected' && formatDuration(callDuration)}
+          {callState === 'ended' && 'Call ended'}
+          {callState === 'missed' && 'Missed call'}
+          {callState === 'declined' && 'Call declined'}
+        </p>
+        <div className="mt-2">
+          {callType === 'audio' ? (
+            <Phone className="w-6 h-6 text-green-500" />
+          ) : (
+            <Video className="w-6 h-6 text-green-500" />
+          )}
+        </div>
+      </div>
+
+      {/* Call Actions */}
+      <div className="flex gap-6">
+        {callState === 'ringing' && (
+          <>
+            <button
+              onClick={onDecline}
+              className="w-14 h-14 bg-red-500 rounded-full flex items-center justify-center hover:bg-red-600 transition-colors"
+            >
+              <PhoneOff className="w-7 h-7 text-white" />
+            </button>
+            <button
+              onClick={onAnswer}
+              className="w-14 h-14 bg-green-500 rounded-full flex items-center justify-center hover:bg-green-600 transition-colors"
+            >
+              {callType === 'audio' ? (
+                <Phone className="w-7 h-7 text-white" />
+              ) : (
+                <Video className="w-7 h-7 text-white" />
+              )}
+            </button>
+          </>
+        )}
+        {(callState === 'calling' || callState === 'connected') && (
+          <button
+            onClick={onEnd}
+            className="w-14 h-14 bg-red-500 rounded-full flex items-center justify-center hover:bg-red-600 transition-colors"
+          >
+            <PhoneOff className="w-7 h-7 text-white" />
+          </button>
+        )}
+        {(callState === 'ended' || callState === 'missed' || callState === 'declined') && (
+          <button
+            onClick={onEnd}
+            className="px-6 py-3 bg-gray-700 rounded-full text-white hover:bg-gray-600 transition-colors"
+          >
+            Close
+          </button>
+        )}
+      </div>
+
+      {/* Waveform Animation for Active Calls */}
+      {callState === 'connected' && (
+        <div className="flex gap-1 mt-8">
+          {[...Array(5)].map((_, i) => (
+            <motion.div
+              key={i}
+              className="w-1 bg-green-500 rounded-full"
+              animate={{
+                height: [8, 24, 8],
+              }}
+              transition={{
+                duration: 0.5,
+                repeat: Infinity,
+                delay: i * 0.1,
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+// ============ FILE PREVIEW COMPONENT ============
+function FilePreview({ file, onRemove }: { file: { name: string; size: number; type: string; preview?: string }; onRemove: () => void }) {
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const getIcon = () => {
+    if (file.type.startsWith('image/')) return <FileImage className="w-8 h-8 text-green-500" />;
+    if (file.type.startsWith('video/')) return <FileVideo className="w-8 h-8 text-blue-500" />;
+    if (file.type.startsWith('audio/')) return <FileAudio className="w-8 h-8 text-purple-500" />;
+    return <FileText className="w-8 h-8 text-gray-500" />;
+  };
+
+  return (
+    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border">
+      {file.preview && file.type.startsWith('image/') ? (
+        <img src={file.preview} alt="" className="w-12 h-12 object-cover rounded" />
+      ) : (
+        getIcon()
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">{file.name}</p>
+        <p className="text-xs text-gray-500">{formatSize(file.size)}</p>
+      </div>
+      <button onClick={onRemove} className="p-1 hover:bg-gray-200 rounded-full">
+        <X className="w-4 h-4 text-gray-500" />
+      </button>
+    </div>
+  );
+}
+
+// ============ VOICE MESSAGE PLAYER ============
+function VoiceMessagePlayer({ duration, mediaUrl }: { duration?: number; mediaUrl?: string }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+    setIsPlaying(!isPlaying);
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <audio 
+        ref={audioRef} 
+        src={mediaUrl} 
+        onTimeUpdate={(e) => setProgress(e.currentTarget.currentTime)}
+        onEnded={() => { setIsPlaying(false); setProgress(0); }}
+      />
+      <button 
+        onClick={togglePlay}
+        className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-colors"
+      >
+        {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+      </button>
+      <div className="flex-1">
+        <div className="h-1 bg-white/30 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-white rounded-full transition-all duration-100" 
+            style={{ width: `${duration ? (progress / duration) * 100 : 0}%` }}
+          />
+        </div>
+      </div>
+      <span className="text-xs">{formatTime(duration || 0)}</span>
+    </div>
+  );
+}
+
 // ============ CHAT VIEW ============
 function ChatView({ chat, currentUser, onBack, onSendMessage }: { 
   chat: ChatType; 
@@ -1070,19 +1303,405 @@ function ChatView({ chat, currentUser, onBack, onSendMessage }: {
   onBack: () => void;
   onSendMessage: (content: string, mediaUrl?: string, mediaType?: string) => void;
 }) {
+  // Basic states
   const [newMessage, setNewMessage] = useState('');
   const [showAttach, setShowAttach] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [messages, setMessages] = useState<MessageType[]>([]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  // Initialize messages safely - use empty array if chat is undefined
-  const [messages, setMessages] = useState<MessageType[]>(() => {
-    if (!chat || !chat.user) return [];
-    return [
-      { id: 'm1', content: 'Hey there! 👋', senderId: chat.user.id, createdAt: new Date(Date.now() - 3600000).toISOString(), isRead: true },
-      { id: 'm2', content: 'Hi! How are you?', senderId: currentUser.id, createdAt: new Date(Date.now() - 3000000).toISOString(), isRead: true },
-      { id: 'm3', content: chat.lastMessage?.content || 'Hello!', senderId: chat.user.id, createdAt: chat.lastMessage?.createdAt || new Date().toISOString(), isRead: chat.lastMessage?.isRead ?? true },
-    ];
-  });
+  // File input refs
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const documentInputRef = useRef<HTMLInputElement>(null);
+  
+  // Voice recording states
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [waveform, setWaveform] = useState<number[]>([]);
+  
+  // File attachment states
+  const [pendingFile, setPendingFile] = useState<{ name: string; size: number; type: string; preview?: string } | null>(null);
+  
+  // Typing indicator states
+  const [isTyping, setIsTyping] = useState(false);
+  const [otherUserTyping, setOtherUserTyping] = useState(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Socket connection - use any for flexibility
+  const socketRef = useRef<any>(null);
+  
+  // Call states
+  const [callState, setCallState] = useState<'idle' | 'calling' | 'ringing' | 'connected' | 'ended' | 'missed' | 'declined'>('idle');
+  const [callType, setCallType] = useState<'audio' | 'video'>('audio');
+  const [callDuration, setCallDuration] = useState(0);
+  const [callId, setCallId] = useState<string | null>(null);
+  const callIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Message status tracking
+  const [messageStatuses, setMessageStatuses] = useState<Map<string, 'sending' | 'sent' | 'delivered' | 'read'>>(new Map());
+
+  // Initialize socket connection with dynamic import
+  useEffect(() => {
+    let mounted = true;
+    
+    // Dynamic import of socket.io-client
+    import('socket.io-client').then((socketModule) => {
+      if (!mounted) return;
+      
+      const socket = socketModule.io('/?XTransformPort=3003', {
+        transports: ['websocket', 'polling'],
+      });
+      
+      socketRef.current = socket;
+
+      socket.on('connect', () => {
+        console.log('Socket connected');
+        socket.emit('auth', {
+          userId: currentUser.id,
+          username: `${currentUser.firstName} ${currentUser.lastName}`,
+          avatar: currentUser.avatar,
+          conversations: chat?.id ? [chat.id] : [],
+        });
+      });
+
+      // Listen for typing events
+      socket.on('user-typing', (data: { userId: string; isTyping: boolean }) => {
+        if (data.userId !== currentUser.id) {
+          setOtherUserTyping(data.isTyping);
+        }
+      });
+
+      // Listen for new messages
+      socket.on('new-message', (data: MessageType) => {
+        setMessages(prev => {
+          if (prev.find(m => m.id === data.id)) return prev;
+          return [...prev, data];
+        });
+      });
+
+      // Listen for message status updates
+      socket.on('message-status', (data: { messageId: string; status: string; deliveredAt?: string; readAt?: string }) => {
+        setMessageStatuses(prev => {
+          const next = new Map(prev);
+          next.set(data.messageId, data.status as any);
+          return next;
+        });
+        setMessages(prev => prev.map(m => 
+          m.id === data.messageId 
+            ? { ...m, status: data.status as any, deliveredAt: data.deliveredAt, readAt: data.readAt }
+            : m
+        ));
+      });
+
+      // Listen for incoming calls
+      socket.on('incoming-call', (data: { callId: string; callType: 'audio' | 'video'; callerId: string; callerName: string }) => {
+        setCallId(data.callId);
+        setCallType(data.callType);
+        setCallState('ringing');
+      });
+
+      // Listen for call answered
+      socket.on('call-answered', () => {
+        setCallState('connected');
+        callIntervalRef.current = setInterval(() => {
+          setCallDuration(prev => prev + 1);
+        }, 1000);
+      });
+
+      // Listen for call declined
+      socket.on('call-declined', () => {
+        setCallState('declined');
+        if (callIntervalRef.current) clearInterval(callIntervalRef.current);
+      });
+
+      // Listen for call ended
+      socket.on('call-ended', () => {
+        setCallState('ended');
+        if (callIntervalRef.current) clearInterval(callIntervalRef.current);
+      });
+    });
+
+    return () => {
+      mounted = false;
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+      if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+      if (callIntervalRef.current) clearInterval(callIntervalRef.current);
+    };
+  }, [currentUser, chat?.id]);
+
+  // Initialize messages from chat - use a ref to track if initialized
+  const messagesInitializedRef = useRef(false);
+  useEffect(() => {
+    // Only initialize once when chat data is available
+    if (messagesInitializedRef.current) return;
+    if (chat?.messages && chat.messages.length > 0) {
+      messagesInitializedRef.current = true;
+      // Use setTimeout to defer setState
+      const timeoutId = setTimeout(() => {
+        setMessages(chat.messages);
+      }, 0);
+      return () => clearTimeout(timeoutId);
+    } else if (chat?.lastMessage && chat.user) {
+      messagesInitializedRef.current = true;
+      const timeoutId = setTimeout(() => {
+        setMessages([{
+          id: 'initial',
+          content: chat.lastMessage.content,
+          senderId: chat.user.id,
+          createdAt: chat.lastMessage.createdAt,
+          isRead: chat.lastMessage.isRead,
+        }]);
+      }, 0);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [chat]);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Mark messages as read when viewing
+  useEffect(() => {
+    const unreadMessages = messages.filter(m => m.senderId !== currentUser.id && !m.isRead);
+    unreadMessages.forEach(m => {
+      socketRef.current?.emit('message-read', {
+        conversationId: chat?.id,
+        messageId: m.id,
+        userId: currentUser.id,
+      });
+    });
+  }, [messages, currentUser.id, chat?.id]);
+
+  // Handle typing indicator
+  const handleTyping = useCallback(() => {
+    const socket = socketRef.current;
+    const chatId = chat?.id;
+    if (!socket || !chatId) return;
+    
+    setIsTyping(true);
+    socket.emit('typing-start', {
+      conversationId: chatId,
+      userId: currentUser.id,
+      userName: `${currentUser.firstName} ${currentUser.lastName}`,
+    });
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      setIsTyping(false);
+      socket.emit('typing-stop', {
+        conversationId: chatId,
+        userId: currentUser.id,
+      });
+    }, 2000);
+  }, [chat?.id, currentUser]);
+
+  // Send message
+  const handleSend = useCallback(() => {
+    if (!newMessage.trim() && !pendingFile && !audioUrl) return;
+
+    const messageId = `m-${Date.now()}`;
+    let msg: MessageType = {
+      id: messageId,
+      content: newMessage,
+      senderId: currentUser.id,
+      createdAt: new Date().toISOString(),
+      isRead: false,
+      status: 'sending',
+      isEncrypted: true,
+      messageType: 'text',
+    };
+
+    // Handle file attachment
+    if (pendingFile) {
+      const isImage = pendingFile.type.startsWith('image/');
+      const isVideo = pendingFile.type.startsWith('video/');
+      msg = {
+        ...msg,
+        mediaUrl: pendingFile.preview,
+        mediaType: isImage ? 'image' : isVideo ? 'video' : 'file',
+        messageType: isImage ? 'image' : isVideo ? 'video' : 'file',
+        fileName: pendingFile.name,
+        fileSize: pendingFile.size,
+      };
+      setPendingFile(null);
+    }
+
+    // Handle voice message
+    if (audioUrl) {
+      msg = {
+        ...msg,
+        mediaUrl: audioUrl,
+        messageType: 'voice',
+        voiceDuration: recordingDuration,
+        content: '',
+      };
+      setAudioUrl(null);
+      setAudioBlob(null);
+      setRecordingDuration(0);
+    }
+
+    setMessages(prev => [...prev, msg]);
+    setMessageStatuses(prev => {
+      const next = new Map(prev);
+      next.set(messageId, 'sending');
+      return next;
+    });
+
+    // Send via socket
+    socketRef.current?.emit('send-message', {
+      conversationId: chat?.id,
+      messageId,
+      senderId: currentUser.id,
+      senderName: `${currentUser.firstName} ${currentUser.lastName}`,
+      senderAvatar: currentUser.avatar,
+      content: msg.content,
+      messageType: msg.messageType,
+      mediaUrl: msg.mediaUrl,
+      fileName: msg.fileName,
+      fileSize: msg.fileSize,
+      voiceDuration: msg.voiceDuration,
+      isEncrypted: true,
+    });
+
+    onSendMessage(newMessage, msg.mediaUrl, msg.mediaType);
+    setNewMessage('');
+
+    // Stop typing indicator
+    socketRef.current?.emit('typing-stop', {
+      conversationId: chat?.id,
+      userId: currentUser.id,
+    });
+  }, [newMessage, pendingFile, audioUrl, recordingDuration, currentUser, chat?.id, onSendMessage]);
+
+  // Voice recording functions
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        setAudioBlob(blob);
+        setAudioUrl(URL.createObjectURL(blob));
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingDuration(0);
+      setWaveform([]);
+
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+        // Generate random waveform data for visualization
+        setWaveform(prev => [...prev.slice(-20), Math.random() * 100]);
+      }, 1000);
+    } catch (error) {
+      console.error('Failed to start recording:', error);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+    }
+  };
+
+  const cancelRecording = () => {
+    stopRecording();
+    setAudioBlob(null);
+    setAudioUrl(null);
+    setRecordingDuration(0);
+    setWaveform([]);
+  };
+
+  // File selection handlers
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video' | 'document') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPendingFile({
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        preview: reader.result as string,
+      });
+    };
+    reader.readAsDataURL(file);
+    setShowAttach(false);
+  };
+
+  // Call functions
+  const initiateCall = (type: 'audio' | 'video') => {
+    const newCallId = `call-${Date.now()}`;
+    setCallId(newCallId);
+    setCallType(type);
+    setCallState('calling');
+    setCallDuration(0);
+
+    socketRef.current?.emit('call-initiate', {
+      callId: newCallId,
+      conversationId: chat?.id,
+      callerId: currentUser.id,
+      callerName: `${currentUser.firstName} ${currentUser.lastName}`,
+      callerAvatar: currentUser.avatar,
+      receiverId: chat?.user?.id,
+      callType: type,
+    });
+  };
+
+  const answerCall = () => {
+    socketRef.current?.emit('call-answer', {
+      callId,
+      conversationId: chat?.id,
+      answererId: currentUser.id,
+      answererName: `${currentUser.firstName} ${currentUser.lastName}`,
+    });
+    setCallState('connected');
+    callIntervalRef.current = setInterval(() => {
+      setCallDuration(prev => prev + 1);
+    }, 1000);
+  };
+
+  const declineCall = () => {
+    socketRef.current?.emit('call-decline', {
+      callId,
+      conversationId: chat?.id,
+      declinerId: currentUser.id,
+    });
+    setCallState('idle');
+  };
+
+  const endCall = () => {
+    socketRef.current?.emit('call-end', {
+      callId,
+      conversationId: chat?.id,
+      endedBy: currentUser.id,
+      duration: callDuration,
+    });
+    setCallState('idle');
+    if (callIntervalRef.current) clearInterval(callIntervalRef.current);
+  };
 
   // Handle case when chat is undefined
   if (!chat || !chat.user) {
@@ -1093,52 +1712,14 @@ function ChatView({ chat, currentUser, onBack, onSendMessage }: {
         exit={{ x: '100%' }}
         className="fixed inset-0 bg-white z-[60] flex flex-col items-center justify-center"
       >
+        <MessageCircle className="w-16 h-16 text-gray-300 mb-4" />
         <p className="text-gray-500 mb-4">Select a conversation to start chatting</p>
-        <button onClick={onBack} className="px-4 py-2 bg-gray-100 rounded-lg">
+        <button onClick={onBack} className="px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200">
           Back
         </button>
       </motion.div>
     );
   }
-
-  const handleSend = () => {
-    if (newMessage.trim()) {
-      const msg: MessageType = {
-        id: `m-${Date.now()}`,
-        content: newMessage,
-        senderId: currentUser.id,
-        createdAt: new Date().toISOString(),
-        isRead: true
-      };
-      setMessages([...messages, msg]);
-      onSendMessage(newMessage);
-      setNewMessage('');
-    }
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const mediaUrl = reader.result as string;
-        const mediaType = file.type.startsWith('video') ? 'video' : 'image';
-        const msg: MessageType = {
-          id: `m-${Date.now()}`,
-          content: '',
-          senderId: currentUser.id,
-          createdAt: new Date().toISOString(),
-          isRead: true,
-          mediaUrl,
-          mediaType
-        };
-        setMessages([...messages, msg]);
-        onSendMessage('', mediaUrl, mediaType);
-      };
-      reader.readAsDataURL(file);
-    }
-    setShowAttach(false);
-  };
 
   return (
     <motion.div
@@ -1147,69 +1728,199 @@ function ChatView({ chat, currentUser, onBack, onSendMessage }: {
       exit={{ x: '100%' }}
       className="fixed inset-0 bg-white z-[60] flex flex-col"
     >
-      <div className="flex items-center gap-3 p-3 border-b">
-        <button onClick={onBack} className="w-9 h-9 rounded-full flex items-center justify-center">
+      {/* Header */}
+      <div className="flex items-center gap-3 p-3 border-b bg-white">
+        <button onClick={onBack} className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100">
           <ChevronLeft className="w-5 h-5" />
         </button>
         <Avatar className="w-9 h-9">
           <AvatarImage src={chat.user.avatar} />
+          <AvatarFallback>{getInitials(chat.user.firstName, chat.user.lastName)}</AvatarFallback>
         </Avatar>
         <div className="flex-1">
-          <p className="font-semibold">{chat.user.firstName} {chat.user.lastName}</p>
-          <p className="text-xs text-green-500">Active now</p>
+          <div className="flex items-center gap-2">
+            <p className="font-semibold">{chat.user.firstName} {chat.user.lastName}</p>
+            <Lock className="w-3.5 h-3.5 text-gray-400" title="End-to-end encrypted" />
+          </div>
+          <p className="text-xs text-green-500">
+            {otherUserTyping ? (
+              <span className="text-blue-500">typing...</span>
+            ) : chat.user.isOnline ? (
+              'Active now'
+            ) : (
+              'Offline'
+            )}
+          </p>
         </div>
-        <button className="w-9 h-9 rounded-full flex items-center justify-center">
+        <button 
+          onClick={() => initiateCall('audio')} 
+          className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100"
+        >
           <Phone className="w-5 h-5 text-gray-600" />
         </button>
-        <button className="w-9 h-9 rounded-full flex items-center justify-center">
+        <button 
+          onClick={() => initiateCall('video')} 
+          className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-gray-100"
+        >
           <Video className="w-5 h-5 text-gray-600" />
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-3">
-        {messages.map((msg) => (
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-3 bg-gray-50">
+        {/* Encryption notice */}
+        <div className="flex items-center justify-center gap-2 py-2 mb-4">
+          <Lock className="w-3.5 h-3.5 text-gray-400" />
+          <span className="text-xs text-gray-500">Messages are end-to-end encrypted</span>
+        </div>
+
+        {messages.map((msg) => {
+          const isOwn = msg.senderId === currentUser.id;
+          return (
+            <motion.div
+              key={msg.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={cn("flex gap-2 mb-2", isOwn ? "flex-row-reverse" : "flex-row")}
+            >
+              {!isOwn && (
+                <Avatar className="w-8 h-8 mt-0.5">
+                  <AvatarImage src={chat.user.avatar} />
+                  <AvatarFallback>{getInitials(chat.user.firstName, chat.user.lastName)}</AvatarFallback>
+                </Avatar>
+              )}
+              <div className={cn(
+                "max-w-[70%] rounded-2xl px-3 py-2",
+                isOwn ? "bg-blue-600 text-white" : "bg-white shadow-sm"
+              )}>
+                {/* Voice message */}
+                {msg.messageType === 'voice' && (
+                  <VoiceMessagePlayer duration={msg.voiceDuration} mediaUrl={msg.mediaUrl} />
+                )}
+                
+                {/* Image */}
+                {msg.messageType === 'image' && msg.mediaUrl && (
+                  <img src={msg.mediaUrl} alt="" className="max-w-full rounded-lg mb-1 max-h-48 object-cover" />
+                )}
+                
+                {/* Video */}
+                {msg.messageType === 'video' && msg.mediaUrl && (
+                  <video src={msg.mediaUrl} controls className="max-w-full rounded-lg mb-1 max-h-48" />
+                )}
+                
+                {/* File/Document */}
+                {(msg.messageType === 'file' || msg.messageType === 'document') && (
+                  <div className="flex items-center gap-2 p-2 bg-black/10 rounded-lg">
+                    <FileText className="w-6 h-6" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{msg.fileName}</p>
+                      <p className="text-xs opacity-70">{msg.fileSize ? `${(msg.fileSize / 1024).toFixed(1)} KB` : ''}</p>
+                    </div>
+                  </div>
+                )}
+                
+                {msg.content && <p className="text-sm">{msg.content}</p>}
+                
+                {/* Time and status */}
+                <div className={cn("flex items-center gap-1 justify-end mt-1", isOwn ? "text-blue-100" : "text-gray-400")}>
+                  <span className="text-xs">
+                    {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  <MessageStatus status={messageStatuses.get(msg.id) || msg.status} isOwn={isOwn} />
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Pending file preview */}
+      {pendingFile && (
+        <div className="px-3 py-2 bg-white border-t">
+          <FilePreview file={pendingFile} onRemove={() => setPendingFile(null)} />
+        </div>
+      )}
+
+      {/* Voice recording UI */}
+      {isRecording && (
+        <div className="px-3 py-3 bg-red-50 border-t border-red-200">
+          <div className="flex items-center gap-3">
+            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+            <div className="flex-1 flex items-center gap-1 h-8">
+              {waveform.map((h, i) => (
+                <div 
+                  key={i} 
+                  className="w-1 bg-red-400 rounded-full" 
+                  style={{ height: `${Math.max(4, h * 0.3)}px` }}
+                />
+              ))}
+            </div>
+            <span className="text-sm text-red-600 font-medium">
+              {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
+            </span>
+            <button onClick={cancelRecording} className="p-2 hover:bg-red-100 rounded-full">
+              <X className="w-5 h-5 text-red-500" />
+            </button>
+            <button onClick={stopRecording} className="p-2 bg-red-500 hover:bg-red-600 rounded-full">
+              <Square className="w-5 h-5 text-white" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Voice message preview */}
+      {audioUrl && !isRecording && (
+        <div className="px-3 py-2 bg-gray-100 border-t">
+          <div className="flex items-center gap-2">
+            <Mic className="w-5 h-5 text-blue-500" />
+            <audio src={audioUrl} controls className="flex-1 h-8" />
+            <button onClick={() => { setAudioUrl(null); setAudioBlob(null); }} className="p-1 hover:bg-gray-200 rounded-full">
+              <X className="w-4 h-4 text-gray-500" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Typing indicator */}
+      <AnimatePresence>
+        {otherUserTyping && (
           <motion.div
-            key={msg.id}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className={cn("flex gap-2 mb-2", msg.senderId === currentUser.id ? "flex-row-reverse" : "flex-row")}
+            exit={{ opacity: 0, y: 10 }}
+            className="px-3 py-2 bg-white"
           >
-            {msg.senderId !== currentUser.id && (
-              <Avatar className="w-8 h-8 mt-0.5">
-                <AvatarImage src={chat.user.avatar} />
-              </Avatar>
-            )}
-            <div className={cn(
-              "max-w-[70%] rounded-2xl px-3 py-2",
-              msg.senderId === currentUser.id ? "bg-blue-600 text-white" : "bg-gray-100"
-            )}>
-              {msg.mediaUrl && (
-                msg.mediaType === 'video' ? (
-                  <video src={msg.mediaUrl} controls className="max-w-full rounded-lg mb-1" />
-                ) : (
-                  <img src={msg.mediaUrl} alt="" className="max-w-full rounded-lg mb-1" />
-                )
-              )}
-              {msg.content && <p className="text-sm">{msg.content}</p>}
-              <p className={cn("text-xs mt-1", msg.senderId === currentUser.id ? "text-blue-100" : "text-gray-400")}>
-                {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </p>
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <div className="flex gap-1">
+                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <span>{chat.user.firstName} is typing...</span>
             </div>
           </motion.div>
-        ))}
-      </div>
-      <div className="p-3 border-t">
+        )}
+      </AnimatePresence>
+
+      {/* Input area */}
+      <div className="p-3 border-t bg-white">
         <div className="flex items-end gap-2">
-          <div className="flex-1 bg-gray-100 rounded-full px-4 py-2 flex items-end gap-2">
+          {/* Attachment button */}
+          <div className="relative">
             <button 
               onClick={() => setShowAttach(!showAttach)}
-              className="p-1.5 hover:bg-gray-200 rounded-full transition-colors"
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
             >
-              <Plus className="w-5 h-5 text-gray-500" />
+              <Plus className={cn("w-5 h-5 text-gray-500 transition-transform", showAttach && "rotate-45")} />
             </button>
+          </div>
+          
+          <div className="flex-1 bg-gray-100 rounded-3xl px-4 py-2 flex items-end gap-2">
             <textarea
               placeholder="Aa"
               value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
+              onChange={(e) => { setNewMessage(e.target.value); handleTyping(); }}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }}}
               className="flex-1 bg-transparent outline-none resize-none max-h-32 text-sm"
               rows={1}
@@ -1218,40 +1929,81 @@ function ChatView({ chat, currentUser, onBack, onSendMessage }: {
               <Smile className="w-5 h-5 text-gray-500" />
             </button>
           </div>
-          <button
-            onClick={handleSend}
-            disabled={!newMessage.trim()}
-            className={cn(
-              "w-10 h-10 rounded-full flex items-center justify-center",
-              newMessage.trim() ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-400"
-            )}
-          >
-            <Send className="w-5 h-5" />
-          </button>
-        </div>
-        {showAttach && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex gap-2 mt-2"
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,video/*"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg text-sm"
+          
+          {/* Mic or Send button */}
+          {newMessage.trim() || pendingFile || audioUrl ? (
+            <button
+              onClick={handleSend}
+              className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 transition-colors"
             >
-              <ImageIcon className="w-5 h-5 text-green-500" />
-              Photo/Video
+              <Send className="w-5 h-5" />
             </button>
-          </motion.div>
-        )}
+          ) : (
+            <button
+              onClick={isRecording ? stopRecording : startRecording}
+              className={cn(
+                "w-10 h-10 rounded-full flex items-center justify-center transition-colors",
+                isRecording ? "bg-red-500 text-white" : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+              )}
+            >
+              {isRecording ? <Square className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+            </button>
+          )}
+        </div>
+
+        {/* Attachment options */}
+        <AnimatePresence>
+          {showAttach && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="flex gap-2 mt-2"
+            >
+              <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFileSelect(e, 'image')} />
+              <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={(e) => handleFileSelect(e, 'video')} />
+              <input ref={documentInputRef} type="file" accept=".pdf,.doc,.docx,.txt,.xls,.xlsx" className="hidden" onChange={(e) => handleFileSelect(e, 'document')} />
+              
+              <button 
+                onClick={() => imageInputRef.current?.click()}
+                className="flex items-center gap-2 px-3 py-2 bg-green-50 rounded-full text-sm hover:bg-green-100"
+              >
+                <ImageIcon className="w-5 h-5 text-green-500" />
+                Photo
+              </button>
+              <button 
+                onClick={() => videoInputRef.current?.click()}
+                className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-full text-sm hover:bg-blue-100"
+              >
+                <Video className="w-5 h-5 text-blue-500" />
+                Video
+              </button>
+              <button 
+                onClick={() => documentInputRef.current?.click()}
+                className="flex items-center gap-2 px-3 py-2 bg-purple-50 rounded-full text-sm hover:bg-purple-100"
+              >
+                <FileText className="w-5 h-5 text-purple-500" />
+                Document
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
+
+      {/* Call UI */}
+      <AnimatePresence>
+        {callState !== 'idle' && (
+          <CallUI
+            callState={callState}
+            callType={callType}
+            callDuration={callDuration}
+            otherUser={chat.user}
+            onAnswer={answerCall}
+            onDecline={declineCall}
+            onEnd={endCall}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
